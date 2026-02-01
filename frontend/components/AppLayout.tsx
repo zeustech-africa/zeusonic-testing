@@ -17,7 +17,9 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
         <Container>
           <div className="flex items-center justify-between py-4">
             <div className="flex items-center gap-4">
-              <img src="/assets/branding/logo-full.svg" alt="ZEUSONIC by ZeusTech" className="h-10" />
+              <img src="/brand/zeusonic/logo.png" alt="Zeusonic" className="h-10 w-auto" />
+<span className="text-muted text-sm hidden sm:inline">by</span>
+<img src="/brand/zeustech/logo.png" alt="ZeusTech" className="h-6 w-auto hidden sm:inline opacity-80" />
             </div>
             <nav className="hidden md:flex items-center gap-6">
               <Link href="/dashboard" className="text-muted hover:text-white">Dashboard</Link>
