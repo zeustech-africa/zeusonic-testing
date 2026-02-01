@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic-settings
+alembic
+python-dotenv
+python-multipart
+SQLAlchemy
+pytest
+pydantic-settings

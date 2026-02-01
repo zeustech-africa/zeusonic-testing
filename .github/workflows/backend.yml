@@ -1,0 +1,55 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - 'backend/**'
+      - 'MIGRATIONS.md'
+      - '.github/workflows/**'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - 'MIGRATIONS.md'
+      - '.github/workflows/**'
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Ensure clean database
+        run: |
+          # Ensure storage directory exists and remove any prior DB (CI runner should be clean, but be explicit)
+          mkdir -p backend/storage
+          rm -f backend/storage/zeusonic.db || true
+
+      - name: Apply Alembic migrations
+        run: |
+          alembic -c backend/alembic.ini upgrade head
+
+      - name: Run backend test suite
+        run: |
+          pytest -q
+
+      - name: Show DB file (debug)
+        if: failure()
+        run: |
+          ls -la backend/storage || true
+          echo "--- tail of sqlite file listing ---"
+          file backend/storage/zeusonic.db || true
