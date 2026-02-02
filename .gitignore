@@ -1,0 +1,12 @@
+# Environment & secrets
+.env
+backend/.env
+backend/.demo_api_key
+
+# Local databases & storage
+backend/storage/zeusonic.db
+backend/storage/projects/
+
+# OS noise
+.DS_Store
+

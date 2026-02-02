@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 from backend.db import models
@@ -12,6 +12,7 @@ FEATURE_MATRIX: Dict[str, Dict[str, Any]] = {
         'can_export_stems': False,
         'max_job_duration_seconds': 30,  # simulated limit
         'max_jobs_per_month': 10,
+        'max_projects_total': 2,
         'can_use_creator_voice': False,
         'can_change_vocal_tone': False,
         'can_use_advanced_beats': False,
@@ -21,6 +22,7 @@ FEATURE_MATRIX: Dict[str, Dict[str, Any]] = {
         'can_export_stems': True,
         'max_job_duration_seconds': 120,
         'max_jobs_per_month': 500,
+        'max_projects_total': None,
         'can_use_creator_voice': True,
         'can_change_vocal_tone': True,
         'can_use_advanced_beats': True,
@@ -30,6 +32,7 @@ FEATURE_MATRIX: Dict[str, Dict[str, Any]] = {
         'can_export_stems': True,
         'max_job_duration_seconds': 600,
         'max_jobs_per_month': 5000,
+        'max_projects_total': None,
         'can_use_creator_voice': True,
         'can_change_vocal_tone': True,
         'can_use_advanced_beats': True,
@@ -47,7 +50,7 @@ def tier_limit(feature: str, tier: str) -> Any:
     return FEATURE_MATRIX.get(tier, FEATURE_MATRIX['FREE']).get(feature)
 
 
-def get_entitlements(owner: str, api_key_tier: str) -> Dict[str, Any]:
+def get_entitlements(owner: str, api_key_tier: str, user_id: Optional[int] = None) -> Dict[str, Any]:
     """Resolve the final entitlements for an owner.
 
     Precedence:
@@ -56,17 +59,30 @@ def get_entitlements(owner: str, api_key_tier: str) -> Dict[str, Any]:
     """
     db = SessionLocal()
     try:
-        sub = db.query(models.Subscription).filter(models.Subscription.owner == owner).order_by(models.Subscription.created_at.desc()).first()
-        if sub and sub.status in ('active', 'trialing'):
-            # check ends_at for expiration
-            if sub.ends_at and sub.ends_at < datetime.utcnow():
-                # treat as expired
-                effective = None
-            else:
-                # Load Plan
-                plan = db.query(models.Plan).filter(models.Plan.code == sub.plan_code).first()
+        query = db.query(models.Subscription).order_by(models.Subscription.created_at.desc())
+        if user_id is not None:
+            sub = query.filter(models.Subscription.user_id == user_id).first()
+        else:
+            sub = query.filter(models.Subscription.owner == owner).first()
+
+        if sub:
+            now = datetime.utcnow()
+            period_end = sub.current_period_end or sub.ends_at
+            status = (sub.status or "").lower()
+
+            active_status = status in ("active", "trialing", "past_due")
+            canceled_but_active = status == "canceled" and period_end and period_end > now
+
+            if active_status or canceled_but_active:
+                plan = None
+                if sub.plan_id:
+                    plan = db.query(models.Plan).filter(models.Plan.id == sub.plan_id).first()
+                if not plan and sub.plan_code:
+                    plan = db.query(models.Plan).filter(models.Plan.code == sub.plan_code).first()
+
                 if plan:
                     return {
+                        'plan_id': plan.id,
                         'plan_code': plan.code,
                         'plan_name': plan.name,
                         'status': sub.status,

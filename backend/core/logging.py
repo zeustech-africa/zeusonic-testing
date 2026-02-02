@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 
 """
 Minimal, centralized logger configuration for Zeusonic backend.
@@ -18,7 +19,7 @@ if not logger.handlers:
 
 logger.setLevel(logging.INFO)
 
-def get_logger(name: str | None = None) -> logging.Logger:
+def get_logger(name: Optional[str] = None) -> logging.Logger:
     """Return the module logger; if name is provided, get a child logger."""
     if name:
         return logger.getChild(name)

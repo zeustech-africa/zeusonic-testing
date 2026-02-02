@@ -4,6 +4,11 @@ from pathlib import Path
 from backend.api.v1.health import router as health_router
 from backend.api.v1.meta import router as meta_router
 from backend.api.v1.audio import router as audio_router
+from backend.api.v1.projects import router as projects_router
+from backend.api.v1.audio_tracks import router as audio_tracks_router
+from backend.api.v1.audio_transform import router as audio_transform_router
+from backend.api.v1.billing import router as billing_router
+from backend.api.auth import router as auth_router
 
 from backend.core.auth import create_api_key, list_api_keys
 from backend.db.database import create_tables
@@ -58,7 +63,15 @@ if settings.app_env == "development":
 
 @app.on_event("startup")
 async def startup_event():
-    """Ensure DB tables exist, create a demo API key on startup, and start the job worker (dev only)."""
+    """Ensure DB tables exist, validate JWT_SECRET, create a demo API key on startup, and start the job worker (dev only)."""
+    
+    # CRITICAL: Enforce JWT_SECRET is configured (fail fast if missing)
+    if not settings.jwt_secret:
+        from backend.core.logging import get_logger as _get_logger
+        logger = _get_logger(__name__)
+        logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
+        raise RuntimeError("JWT_SECRET is required but not configured. Cannot start application.")
+    
     create_tables()
 
     keys = list_api_keys()
@@ -71,7 +84,8 @@ async def startup_event():
         from backend.core.logging import get_logger
 
         logger = get_logger(__name__)
-        logger.info("Application startup: initializing database and demo API key")
+        logger.info("✅ Application startup: JWT_SECRET configured")
+        logger.info("✅ Application startup: initializing database and demo API key")
         logger.info("Demo API key (development only): %s owner=%s", demo.key, demo.owner)
         try:
             # Also write the key to the configured api_key_path for convenience in local development
@@ -85,14 +99,15 @@ async def startup_event():
         # In non-development environments we still log startup but never print or persist API keys
         from backend.core.logging import get_logger as _get_logger
 
-        _get_logger(__name__).info("Application startup: initializing database")
+        _get_logger(__name__).info("✅ Application startup: JWT_SECRET configured")
+        _get_logger(__name__).info("✅ Application startup: initializing database")
 
     # Start background job worker (non-blocking)
     try:
         from backend.jobs import worker
 
         worker.start_worker()
-        logger.info("Background job worker started")
+        logger.info("✅ Background job worker started")
     except Exception as exc:
         logger.warning("Failed to start background job worker: %s", exc)
 
@@ -101,6 +116,11 @@ async def startup_event():
 app.include_router(health_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(audio_router, prefix="/api/v1")
+app.include_router(projects_router, prefix="/api/v1")
+app.include_router(audio_tracks_router, prefix="/api/v1")
+app.include_router(audio_transform_router, prefix="/api/v1")
+app.include_router(billing_router, prefix="/api/v1")
+app.include_router(auth_router)
 
 
 @app.get("/", include_in_schema=False)

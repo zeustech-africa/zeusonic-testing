@@ -7,3 +7,14 @@ python-multipart
 SQLAlchemy
 pytest
 pydantic-settings
+passlib[bcrypt]
+PyJWT
+email-validator
+librosa
+pydub
+pyloudnorm
+numpy
+soundfile
+stripe
+resend>=0.6.0
+

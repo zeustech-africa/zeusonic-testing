@@ -32,6 +32,19 @@ class Settings(BaseSettings):
     # Operational kill switches (server-authoritative)
     disable_uploads: bool = False
 
+    # Auth / JWT
+    jwt_secret: Optional[str] = None
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_minutes: int = 60
+    verification_code_minutes: int = 10
+
+    # Stripe (billing)
+    stripe_secret_key: Optional[str] = None
+    stripe_webhook_secret: Optional[str] = None
+    stripe_monthly_price_id: Optional[str] = None
+    stripe_yearly_price_id: Optional[str] = None
+    frontend_base_url: str = "http://localhost:3000"
+
     # Paths (can be overridden via env vars)
     storage_path: Path = Path(project_root) / "backend" / "storage"
     database_path: Path = Path(project_root) / "backend" / "storage" / "zeusonic.db"

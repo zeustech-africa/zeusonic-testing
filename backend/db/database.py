@@ -55,3 +55,65 @@ def create_tables():
                 conn.execute(text("ALTER TABLE audio_jobs ADD COLUMN owner VARCHAR(128)"))
         except Exception:
             pass
+
+        try:
+            res = conn.execute(text("PRAGMA table_info(plans)"))
+            cols = [r[1] for r in res.fetchall()]
+            if 'updated_at' not in cols:
+                conn.execute(text("ALTER TABLE plans ADD COLUMN updated_at DATETIME DEFAULT (datetime('now'))"))
+        except Exception:
+            pass
+
+        try:
+            res = conn.execute(text("PRAGMA table_info(subscriptions)"))
+            cols = [r[1] for r in res.fetchall()]
+            if 'user_id' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN user_id INTEGER"))
+            if 'stripe_customer_id' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN stripe_customer_id VARCHAR(128)"))
+            if 'stripe_subscription_id' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN stripe_subscription_id VARCHAR(128)"))
+            if 'plan_id' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN plan_id INTEGER"))
+            if 'current_period_end' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN current_period_end DATETIME"))
+            if 'updated_at' not in cols:
+                conn.execute(text("ALTER TABLE subscriptions ADD COLUMN updated_at DATETIME DEFAULT (datetime('now'))"))
+        except Exception:
+            pass
+
+        try:
+            res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='audit_logs'"))
+            if not res.fetchone():
+                conn.execute(text("""
+                    CREATE TABLE audit_logs (
+                        id INTEGER PRIMARY KEY,
+                        user_id INTEGER,
+                        project_id INTEGER,
+                        resource_type VARCHAR(64) NOT NULL,
+                        resource_id INTEGER,
+                        event_type VARCHAR(32) NOT NULL,
+                        action VARCHAR(32) NOT NULL,
+                        details JSON,
+                        created_at DATETIME DEFAULT (datetime('now'))
+                    )
+                """))
+                conn.execute(text("CREATE INDEX idx_audit_user ON audit_logs(user_id)"))
+                conn.execute(text("CREATE INDEX idx_audit_project ON audit_logs(project_id)"))
+                conn.execute(text("CREATE INDEX idx_audit_type ON audit_logs(event_type)"))
+        except Exception:
+            pass
+
+        # Add OTP fields to users table if not present
+        try:
+            res = conn.execute(text("PRAGMA table_info(users)"))
+            cols = [r[1] for r in res.fetchall()]
+            if 'otp_hash' not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN otp_hash VARCHAR(255)"))
+            if 'otp_expires_at' not in cols:
+                conn.execute(text("ALTER TABLE users ADD COLUMN otp_expires_at DATETIME"))
+        except Exception:
+            pass
+
+        conn.commit()
+

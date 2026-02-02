@@ -1,7 +1,7 @@
 from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends, Security
 from pathlib import Path
 from uuid import uuid4, UUID
-from typing import Iterable, Dict, List
+from typing import Iterable, Dict, List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 import time
@@ -80,7 +80,7 @@ from backend.db.database import SessionLocal
 from backend.db import models
 
 
-def _create_job_entry(filename: str, owner: str | None = None) -> str:
+def _create_job_entry(filename: str, owner: Optional[str] = None) -> str:
     """Persist a new AudioJob and return job_id (UUID string)."""
     job_id = str(uuid4())
     db = SessionLocal()
