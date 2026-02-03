@@ -8,7 +8,7 @@ import numpy as np
 import librosa
 import soundfile as sf
 
-from backend.core.logging import get_logger
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 

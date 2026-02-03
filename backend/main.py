@@ -1,18 +1,18 @@
 from fastapi import FastAPI
 from pathlib import Path
 
-from backend.api.v1.health import router as health_router
-from backend.api.v1.meta import router as meta_router
-from backend.api.v1.audio import router as audio_router
-from backend.api.v1.projects import router as projects_router
-from backend.api.v1.audio_tracks import router as audio_tracks_router
-from backend.api.v1.audio_transform import router as audio_transform_router
-from backend.api.v1.billing import router as billing_router
-from backend.api.auth import router as auth_router
+from api.v1.health import router as health_router
+from api.v1.meta import router as meta_router
+from api.v1.audio import router as audio_router
+from api.v1.projects import router as projects_router
+from api.v1.audio_tracks import router as audio_tracks_router
+from api.v1.audio_transform import router as audio_transform_router
+from api.v1.billing import router as billing_router
+from api.auth import router as auth_router
 
-from backend.core.auth import create_api_key, list_api_keys
-from backend.db.database import create_tables
-from backend.core.config import settings
+from core.auth import create_api_key, list_api_keys
+from db.database import create_tables
+from core.config import settings
 
 app = FastAPI(
     title="Zeusonic API",
@@ -24,7 +24,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from fastapi import HTTPException as FastAPIHTTPException
-from backend.core.logging import get_logger
+from core.logging import get_logger
 
 logger = get_logger(__name__)
 
@@ -67,7 +67,7 @@ async def startup_event():
     
     # CRITICAL: Enforce JWT_SECRET is configured (fail fast if missing)
     if not settings.jwt_secret:
-        from backend.core.logging import get_logger as _get_logger
+        from core.logging import get_logger as _get_logger
         logger = _get_logger(__name__)
         logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
         raise RuntimeError("JWT_SECRET is required but not configured. Cannot start application.")
@@ -81,7 +81,7 @@ async def startup_event():
         demo = create_api_key()
     # Development-only: log API key and write it to disk for convenience when running locally
     if settings.app_env == "development":
-        from backend.core.logging import get_logger
+        from core.logging import get_logger
 
         logger = get_logger(__name__)
         logger.info("✅ Application startup: JWT_SECRET configured")
@@ -97,14 +97,14 @@ async def startup_event():
             logger.warning("Failed to write demo API key file: %s", exc)
     else:
         # In non-development environments we still log startup but never print or persist API keys
-        from backend.core.logging import get_logger as _get_logger
+        from core.logging import get_logger as _get_logger
 
         _get_logger(__name__).info("✅ Application startup: JWT_SECRET configured")
         _get_logger(__name__).info("✅ Application startup: initializing database")
 
     # Start background job worker (non-blocking)
     try:
-        from backend.jobs import worker
+        from jobs import worker
 
         worker.start_worker()
         logger.info("✅ Background job worker started")
@@ -133,7 +133,7 @@ async def root():
 async def shutdown_event():
     """Attempt to cleanly stop background workers on shutdown."""
     try:
-        from backend.jobs import worker
+        from jobs import worker
 
         worker.stop_worker()
     except Exception:

@@ -12,6 +12,7 @@ except Exception:
     # Don't fail import if python-dotenv is not available or .env is missing
     project_root = Path(__file__).resolve().parents[2]
 
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +25,12 @@ class Settings(BaseSettings):
     company: str = "ZeusTech"
 
     # Environment
-    app_env: str = "development"  # development | production
+    app_env: str = Field(
+        default="development",
+        validation_alias=AliasChoices("APP_ENV", "ENVIRONMENT"),
+    )  # development | production
+    environment: str = "development"  # Alias for compatibility
+    debug: bool = False
 
     # Beta mode toggle (dev-only, non-functional feature gate)
     beta_mode: bool = False
@@ -33,10 +39,14 @@ class Settings(BaseSettings):
     disable_uploads: bool = False
 
     # Auth / JWT
-    jwt_secret: Optional[str] = None
+    jwt_secret: str
     jwt_algorithm: str = "HS256"
     jwt_access_token_minutes: int = 60
     verification_code_minutes: int = 10
+
+    # Email (Resend)
+    resend_api_key: str
+    resend_from_email: str = "Zeusonic <no-reply@zeustechafrica.com>"
 
     # Stripe (billing)
     stripe_secret_key: Optional[str] = None
@@ -50,7 +60,17 @@ class Settings(BaseSettings):
     database_path: Path = Path(project_root) / "backend" / "storage" / "zeusonic.db"
     api_key_path: Path = Path(project_root) / "backend" / ".demo_api_key"
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+
+    @model_validator(mode="after")
+    def _sync_app_env(self):
+        if self.app_env == "development" and self.environment != "development":
+            object.__setattr__(self, "app_env", self.environment)
+        return self
 
 
 settings = Settings()

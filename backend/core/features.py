@@ -1,8 +1,8 @@
 from typing import Dict, Any, Optional
 from datetime import datetime
 
-from backend.db import models
-from backend.db.database import SessionLocal
+from db import models
+from db.database import SessionLocal
 
 # Centralized feature gate matrix (tier -> feature values)
 # Values can be booleans or numeric limits

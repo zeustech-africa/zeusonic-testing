@@ -1,6 +1,6 @@
 from fastapi import APIRouter
-from backend.core.config import settings
-from backend.db.database import engine
+from core.config import settings
+from db.database import engine
 from sqlalchemy import text
 from pathlib import Path
 

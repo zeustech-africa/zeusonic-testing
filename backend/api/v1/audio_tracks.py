@@ -7,13 +7,13 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Backgro
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.core.auth import get_current_verified_user
-from backend.db.database import get_db
-from backend.db import models
-from backend.core.config import settings
-from backend.services.audio_processor import analyze_audio, mix_audio, master_audio
-from backend.core.observability import log_job_event, log_audit_event
-from backend.core.logging import get_logger
+from core.auth import get_current_verified_user
+from db.database import get_db
+from db import models
+from core.config import settings
+from services.audio_processor import analyze_audio, mix_audio, master_audio
+from core.observability import log_job_event, log_audit_event
+from core.logging import get_logger
 import time
 
 logger = get_logger(__name__)

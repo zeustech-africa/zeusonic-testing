@@ -6,13 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from backend.core.auth import get_current_verified_user
-from backend.core.config import settings
-from backend.core.features import get_entitlements
-from backend.db import models
-from backend.db.database import get_db
-from backend.core.observability import log_audit_event
-from backend.core.logging import get_logger
+from core.auth import get_current_verified_user
+from core.config import settings
+from core.features import get_entitlements
+from db import models
+from db.database import get_db
+from core.observability import log_audit_event
+from core.logging import get_logger
 
 router = APIRouter(tags=["billing"])
 logger = get_logger(__name__)

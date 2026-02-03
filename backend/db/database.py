@@ -2,7 +2,7 @@ from pathlib import Path
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker, declarative_base
 
-from backend.core.config import settings
+from core.config import settings
 
 # Database file: configurable via settings.database_path
 DB_PATH = Path(settings.database_path)

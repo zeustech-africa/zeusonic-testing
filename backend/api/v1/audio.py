@@ -12,7 +12,7 @@ MAX_FILE_SIZE = 20 * 1024 * 1024  # 20 MB
 ALLOWED_EXTENSIONS: Iterable[str] = {"wav", "mp3", "m4a"}
 
 # Storage directory: configurable via settings.storage_path
-from backend.core.config import settings
+from core.config import settings
 
 STORAGE_DIR = Path(settings.storage_path) / "audio_uploads"
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -76,8 +76,8 @@ async def _save_stream(upload_file: UploadFile, destination: Path, max_size: int
     return total
 
 
-from backend.db.database import SessionLocal
-from backend.db import models
+from db.database import SessionLocal
+from db import models
 
 
 def _create_job_entry(filename: str, owner: Optional[str] = None) -> str:
@@ -95,8 +95,8 @@ def _create_job_entry(filename: str, owner: Optional[str] = None) -> str:
 
 
 
-from backend.core.auth import get_api_key
-from backend.core.features import get_entitlements
+from core.auth import get_api_key
+from core.features import get_entitlements
 
 
 @router.post("/audio/upload", response_model=UploadResponse, status_code=201)
@@ -174,7 +174,7 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
     )
 
 
-from backend.db.database import get_db
+from db.database import get_db
 from sqlalchemy.orm import Session
 
 

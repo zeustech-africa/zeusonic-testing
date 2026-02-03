@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: zeusonic-backend
+    env: docker
+    plan: starter
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    autoDeploy: true
+    envVars:
+      - key: ENVIRONMENT
+        value: testing
+      - key: APP_ENV
+        value: testing
+      - key: DEBUG
+        value: "false"
+      - key: JWT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: "Zeusonic <no-reply@zeustechafrica.com>"
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_MONTHLY_PRICE_ID
+        value: price_test_monthly
+      - key: STRIPE_YEARLY_PRICE_ID
+        value: price_test_yearly

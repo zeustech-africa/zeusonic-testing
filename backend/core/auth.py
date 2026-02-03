@@ -8,9 +8,9 @@ from fastapi.security.api_key import APIKeyHeader
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from backend.db.database import get_db, SessionLocal
-from backend.db import models
-from backend.core.config import settings
+from db.database import get_db, SessionLocal
+from db import models
+from core.config import settings
 
 import jwt
 from passlib.context import CryptContext
