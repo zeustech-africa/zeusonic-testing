@@ -10,3 +10,4 @@ backend/storage/projects/
 # OS noise
 .DS_Store
 
+backend/venv/
