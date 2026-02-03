@@ -48,13 +48,16 @@ async def internal_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
     return JSONResponse(status_code=500, content={"detail": "An internal server error occurred. Please try again later."})
 
-# CORS - enable only in development to allow local frontend dev to call the API
-if settings.app_env == "development":
+# CORS - enable for development and testing environments
+if settings.app_env in ["development", "testing"]:
     from fastapi.middleware.cors import CORSMiddleware
 
+    # Use configured allowed origins or fallback to localhost
+    allowed_origins = settings.allowed_origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
+    
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

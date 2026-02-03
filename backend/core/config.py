@@ -54,6 +54,9 @@ class Settings(BaseSettings):
     stripe_monthly_price_id: Optional[str] = None
     stripe_yearly_price_id: Optional[str] = None
     frontend_base_url: str = "http://localhost:3000"
+    
+    # CORS configuration
+    allowed_origins: Optional[list[str]] = None
 
     # Paths (can be overridden via env vars)
     storage_path: Path = Path(project_root) / "backend" / "storage"
