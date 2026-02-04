@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     verification_code_minutes: int = 10
 
     # Email (Resend)
-    resend_api_key: str
+    resend_api_key: Optional[str] = None
     resend_from_email: str = "Zeusonic <no-reply@zeustechafrica.com>"
 
     # Stripe (billing)
