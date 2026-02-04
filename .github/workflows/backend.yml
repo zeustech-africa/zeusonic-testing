@@ -45,9 +45,14 @@ jobs:
         run: |
           alembic -c backend/alembic.ini upgrade head
 
+      - name: Verify database was created
+        run: |
+          test -f backend/storage/zeusonic.db && echo "✅ Database created successfully" || exit 1
+
       - name: Run backend test suite
         run: |
-          pytest -q
+          # Run pytest, but don't fail if no tests are found yet
+          pytest backend/ -v --tb=short || [ $? -eq 5 ]
 
       - name: Show DB file (debug)
         if: failure()
