@@ -68,10 +68,12 @@ if settings.app_env in ["development", "testing"]:
 async def startup_event():
     """Ensure DB tables exist, validate JWT_SECRET, create a demo API key on startup, and start the job worker (dev only)."""
     
+    # Initialize logger at the top to avoid UnboundLocalError
+    from backend.core.logging import get_logger
+    logger = get_logger(__name__)
+    
     # CRITICAL: Enforce JWT_SECRET is configured (fail fast if missing)
     if not settings.jwt_secret:
-        from backend.core.logging import get_logger as _get_logger
-        logger = _get_logger(__name__)
         logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
         raise RuntimeError("JWT_SECRET is required but not configured. Cannot start application.")
     
@@ -84,9 +86,6 @@ async def startup_event():
         demo = create_api_key()
     # Development-only: log API key and write it to disk for convenience when running locally
     if settings.app_env == "development":
-        from backend.core.logging import get_logger
-
-        logger = get_logger(__name__)
         logger.info("✅ Application startup: JWT_SECRET configured")
         logger.info("✅ Application startup: initializing database and demo API key")
         logger.info("Demo API key (development only): %s owner=%s", demo.key, demo.owner)
@@ -100,10 +99,8 @@ async def startup_event():
             logger.warning("Failed to write demo API key file: %s", exc)
     else:
         # In non-development environments we still log startup but never print or persist API keys
-        from backend.core.logging import get_logger as _get_logger
-
-        _get_logger(__name__).info("✅ Application startup: JWT_SECRET configured")
-        _get_logger(__name__).info("✅ Application startup: initializing database")
+        logger.info("✅ Application startup: JWT_SECRET configured")
+        logger.info("✅ Application startup: initializing database")
 
     # Start background job worker (non-blocking)
     try:
