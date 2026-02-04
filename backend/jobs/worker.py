@@ -1,8 +1,8 @@
 import asyncio
 from typing import Optional
-from db import models
-from db.database import SessionLocal
-from core.logging import get_logger
+from backend.db import models
+from backend.db.database import SessionLocal
+from backend.core.logging import get_logger
 from sqlalchemy import select
 
 logger = get_logger(__name__)

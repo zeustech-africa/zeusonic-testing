@@ -7,12 +7,12 @@ from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from sqlalchemy.orm import Session
 
-from core.auth import hash_password, verify_password, create_access_token
-from core.config import settings
-from core.logging import get_logger
-from db.database import get_db
-from db import models
-from services.email_service import send_otp_email
+from backend.core.auth import hash_password, verify_password, create_access_token
+from backend.core.config import settings
+from backend.core.logging import get_logger
+from backend.db.database import get_db
+from backend.db import models
+from backend.services.email_service import send_otp_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = get_logger(__name__)

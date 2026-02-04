@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
-from core.config import settings
-from core.auth import get_api_key
-from db.database import SessionLocal
-from db import models
-from core.features import FEATURE_MATRIX, get_entitlements
+from backend.core.config import settings
+from backend.core.auth import get_api_key
+from backend.db.database import SessionLocal
+from backend.db import models
+from backend.core.features import FEATURE_MATRIX, get_entitlements
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 

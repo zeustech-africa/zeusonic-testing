@@ -9,14 +9,14 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_verified_user
-from core.config import settings
-from db import models
-from db.database import get_db, SessionLocal
-from services.audio_transformer import SUPPORTED_STYLES, analyze_rhythm, extract_stems, transform_beat
-from core.logging import get_logger
-from services.audio_processor import analyze_audio
-from core.observability import log_job_event, log_audit_event
+from backend.core.auth import get_current_verified_user
+from backend.core.config import settings
+from backend.db import models
+from backend.db.database import get_db, SessionLocal
+from backend.services.audio_transformer import SUPPORTED_STYLES, analyze_rhythm, extract_stems, transform_beat
+from backend.core.logging import get_logger
+from backend.services.audio_processor import analyze_audio
+from backend.core.observability import log_job_event, log_audit_event
 
 router = APIRouter(tags=["audio-transform"])
 logger = get_logger(__name__)

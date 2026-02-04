@@ -5,12 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from core.auth import get_current_verified_user
-from core.features import get_entitlements
-from db.database import get_db
-from db import models
-from core.observability import log_audit_event
-from core.logging import get_logger
+from backend.core.auth import get_current_verified_user
+from backend.core.features import get_entitlements
+from backend.db.database import get_db
+from backend.db import models
+from backend.core.observability import log_audit_event
+from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
 router = APIRouter(tags=["projects"])
