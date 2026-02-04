@@ -69,6 +69,35 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_env_values(cls, data):
+        # Cloud platforms (Render, Railway, etc.) may inject env vars with trailing
+        # newlines or whitespace, which can break strict validation of required values.
+        # Normalize all string inputs early so production rules remain strict.
+        if not isinstance(data, dict):
+            return data
+
+        cleaned = {}
+        for key, value in data.items():
+            if isinstance(value, str):
+                cleaned[key] = value.strip()
+            else:
+                cleaned[key] = value
+
+        # Boolean env vars can arrive as strings (e.g., "false\n", "0") in cloud envs;
+        # normalize known values without relaxing validation for unknown inputs.
+        for bool_key in ("debug", "beta_mode", "disable_uploads"):
+            value = cleaned.get(bool_key)
+            if isinstance(value, str):
+                normalized = value.strip().lower()
+                if normalized in {"true", "1", "yes", "y", "on"}:
+                    cleaned[bool_key] = True
+                elif normalized in {"false", "0", "no", "n", "off"}:
+                    cleaned[bool_key] = False
+
+        return cleaned
+
     @model_validator(mode="after")
     def _sync_app_env(self):
         if self.app_env == "development" and self.environment != "development":
