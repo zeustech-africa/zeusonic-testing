@@ -17,6 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     env:
       PYTHONPATH: ${{ github.workspace }}
+      JWT_SECRET: test-secret-for-ci
+      RESEND_API_KEY: test-key-for-ci
 
     steps:
       - name: Checkout

@@ -28,7 +28,12 @@ def upgrade():
     res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='plans'"))
     if res.fetchone():
         if not _column_exists(conn, 'plans', 'updated_at'):
-            op.add_column('plans', sa.Column('updated_at', sa.DateTime, server_default=sa.func.now(), nullable=False))
+            # SQLite workaround: add column without server_default, then update existing rows
+            op.add_column('plans', sa.Column('updated_at', sa.DateTime, nullable=True))
+            conn.execute(text("UPDATE plans SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+            # Now we can make it non-nullable (SQLite allows this)
+            with op.batch_alter_table('plans') as batch_op:
+                batch_op.alter_column('updated_at', nullable=False)
 
     # subscriptions: add Stripe fields + user linkage
     res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='subscriptions'"))
@@ -44,7 +49,11 @@ def upgrade():
         if not _column_exists(conn, 'subscriptions', 'current_period_end'):
             op.add_column('subscriptions', sa.Column('current_period_end', sa.DateTime, nullable=True))
         if not _column_exists(conn, 'subscriptions', 'updated_at'):
-            op.add_column('subscriptions', sa.Column('updated_at', sa.DateTime, server_default=sa.func.now(), nullable=False))
+            # SQLite workaround: add column without server_default, then update existing rows
+            op.add_column('subscriptions', sa.Column('updated_at', sa.DateTime, nullable=True))
+            conn.execute(text("UPDATE subscriptions SET updated_at = CURRENT_TIMESTAMP WHERE updated_at IS NULL"))
+            with op.batch_alter_table('subscriptions') as batch_op:
+                batch_op.alter_column('updated_at', nullable=False)
 
     # stripe_events table
     res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='stripe_events'"))
