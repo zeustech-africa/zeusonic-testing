@@ -111,11 +111,40 @@ async def get_current_verified_user(user: models.User = Depends(get_current_user
 async def get_api_key(api_key_header_value: str = Security(api_key_header), db: Session = Depends(get_db)) -> APIKeyModel:
     """FastAPI dependency to validate X-API-Key header and return the API key model.
 
-    Raises 401 Unauthorized if missing/invalid.
+    Validates the API key from the X-API-Key header against the database.
+    Returns clear error messages for missing or invalid keys.
+    Logs authentication failures (without exposing sensitive data).
+
+    Raises:
+        HTTPException: 401 if API key is missing or invalid
     """
+    from backend.core.logging import get_logger
+    logger = get_logger(__name__)
+    
     if not api_key_header_value:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
-    row = db.query(models.ApiKey).filter(models.ApiKey.key == api_key_header_value, models.ApiKey.is_active == True).first()
+        logger.warning("API authentication failed: Missing X-API-Key header")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key. Include X-API-Key header with your request.",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    # Validate API key from database
+    row = db.query(models.ApiKey).filter(
+        models.ApiKey.key == api_key_header_value,
+        models.ApiKey.is_active == True
+    ).first()
+    
     if not row:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Unauthorized")
+        # Log failed attempt without exposing the actual key
+        key_preview = api_key_header_value[:8] + "..." if len(api_key_header_value) > 8 else "***"
+        logger.warning(f"API authentication failed: Invalid or inactive API key (preview: {key_preview})")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API key. Verify your X-API-Key header value.",
+            headers={"WWW-Authenticate": "ApiKey"},
+        )
+    
+    # Log successful authentication (non-sensitive info only)
+    logger.debug(f"API authentication successful for owner: {row.owner}, tier: {row.tier}")
     return APIKeyModel(key=row.key, owner=row.owner, tier=row.tier, created_at=row.created_at)

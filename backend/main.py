@@ -17,7 +17,48 @@ from backend.core.config import settings
 app = FastAPI(
     title="Zeusonic API",
     version="0.1.0",
+    openapi_tags=[
+        {"name": "health", "description": "Health check endpoints"},
+        {"name": "meta", "description": "Metadata and subscription endpoints"},
+        {"name": "audio", "description": "Audio processing endpoints"},
+        {"name": "projects", "description": "Project management endpoints"},
+        {"name": "audio-tracks", "description": "Audio track management endpoints"},
+        {"name": "audio-transform", "description": "Audio transformation endpoints"},
+        {"name": "billing", "description": "Billing and subscription endpoints"},
+        {"name": "auth", "description": "Authentication endpoints"},
+    ],
 )
+
+# Configure OpenAPI security scheme for X-API-Key authentication
+from fastapi.openapi.utils import get_openapi
+
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    openapi_schema = get_openapi(
+        title="Zeusonic API",
+        version="0.1.0",
+        description="Audio processing and transformation API",
+        routes=app.routes,
+    )
+    openapi_schema["components"]["securitySchemes"] = {
+        "ApiKeyAuth": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "API key for authentication. Contact support to obtain your API key."
+        },
+        "BearerAuth": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "JWT token for user authentication"
+        }
+    }
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
 
 # Install calm, non-leaky exception handlers so production responses never include stack traces
 from fastapi import Request
