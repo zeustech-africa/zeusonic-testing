@@ -5,6 +5,7 @@ import { config } from '../lib/config'
 
 type SubInfo = {
   plan_code: string | null
+  tier?: string | null
   plan_name?: string | null
   status?: string
   entitlements?: Record<string, any>

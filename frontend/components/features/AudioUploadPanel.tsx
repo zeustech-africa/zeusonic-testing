@@ -1,7 +1,7 @@
 "use client"
 
 import React, { useRef, useState, useEffect, useMemo } from 'react'
-import useLongPress from '../../hooks/useLongPress'
+import useLongPress from '../hooks/useLongPress'
 import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import Heading from '../ui/Heading'
@@ -231,7 +231,7 @@ function AudioUploadPanel({
     }
 
     // instrumentation: lightweight log (dev only)
-    if (process.env.NODE_ENV === 'development') console.info('[upload] attempt', { filename: file.name, owner: apiKey })
+    if (process.env.NODE_ENV === 'development') console.info('[upload] attempt', { filename: file.name, owner: propApiKey })
 
     setIsUploading(true)
     setDisabled(true)
