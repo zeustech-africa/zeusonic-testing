@@ -165,9 +165,14 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
             detail=(f"Unsupported file extension: .{ext}. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}"),
         )
 
-    # Basic content type sanity check
-    if not (file.content_type and file.content_type.startswith("audio/")):
-        raise HTTPException(status_code=400, detail=f"Unsupported content type: {file.content_type}")
+    # Content type validation: accept audio/* or infer from file extension
+    # (Some clients/platforms like macOS may not detect audio MIME type correctly)
+    is_valid_content_type = (
+        file.content_type and file.content_type.startswith("audio/")
+    ) or ext in ALLOWED_EXTENSIONS
+    
+    if not is_valid_content_type:
+        raise HTTPException(status_code=400, detail=f"Unsupported content type: {file.content_type}. Expected audio file.")
 
     # Create a safe, unique filename and avoid overwriting
     for _ in range(10):
