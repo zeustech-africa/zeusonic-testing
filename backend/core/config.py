@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_minutes: int = 60
     verification_code_minutes: int = 10
+    
+    # Master API Key (optional - for production deployments)
+    # If set, this key will be accepted in addition to database keys
+    zeusonic_api_key: Optional[str] = Field(default=None, validation_alias="ZEUSONIC_API_KEY")
 
     # Email (Resend)
     resend_api_key: Optional[str] = None

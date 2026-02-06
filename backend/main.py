@@ -118,6 +118,13 @@ async def startup_event():
         logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
         raise RuntimeError("JWT_SECRET is required but not configured. Cannot start application.")
     
+    # Log authentication configuration (non-sensitive)
+    logger.info("✅ Application startup: JWT_SECRET configured")
+    if settings.zeusonic_api_key:
+        logger.info("✅ Application startup: ZEUSONIC_API_KEY configured (master key enabled)")
+    else:
+        logger.info("ℹ️  Application startup: ZEUSONIC_API_KEY not set (database-only authentication)")
+    
     create_tables()
 
     keys = list_api_keys()
@@ -127,7 +134,6 @@ async def startup_event():
         demo = create_api_key()
     # Development-only: log API key and write it to disk for convenience when running locally
     if settings.app_env == "development":
-        logger.info("✅ Application startup: JWT_SECRET configured")
         logger.info("✅ Application startup: initializing database and demo API key")
         logger.info("Demo API key (development only): %s owner=%s", demo.key, demo.owner)
         try:

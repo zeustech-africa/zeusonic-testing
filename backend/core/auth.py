@@ -111,7 +111,10 @@ async def get_current_verified_user(user: models.User = Depends(get_current_user
 async def get_api_key(api_key_header_value: str = Security(api_key_header), db: Session = Depends(get_db)) -> APIKeyModel:
     """FastAPI dependency to validate X-API-Key header and return the API key model.
 
-    Validates the API key from the X-API-Key header against the database.
+    Validates the API key from the X-API-Key header using a two-tier system:
+    1. First checks against ZEUSONIC_API_KEY environment variable (if set)
+    2. Falls back to database lookup for user-specific API keys
+    
     Returns clear error messages for missing or invalid keys.
     Logs authentication failures (without exposing sensitive data).
 
@@ -129,22 +132,38 @@ async def get_api_key(api_key_header_value: str = Security(api_key_header), db: 
             headers={"WWW-Authenticate": "ApiKey"},
         )
     
-    # Validate API key from database
+    # TIER 1: Check master API key from environment (production/deployment key)
+    if settings.zeusonic_api_key and api_key_header_value == settings.zeusonic_api_key:
+        logger.info("API authentication successful: Master API key (ZEUSONIC_API_KEY)")
+        return APIKeyModel(
+            key=api_key_header_value,
+            owner="master",
+            tier="PRO",  # Master key gets full access
+            created_at=datetime.utcnow()
+        )
+    
+    # TIER 2: Validate API key from database (user-specific keys)
     row = db.query(models.ApiKey).filter(
         models.ApiKey.key == api_key_header_value,
         models.ApiKey.is_active == True
     ).first()
     
-    if not row:
-        # Log failed attempt without exposing the actual key
-        key_preview = api_key_header_value[:8] + "..." if len(api_key_header_value) > 8 else "***"
-        logger.warning(f"API authentication failed: Invalid or inactive API key (preview: {key_preview})")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API key. Verify your X-API-Key header value.",
-            headers={"WWW-Authenticate": "ApiKey"},
-        )
+    if row:
+        # Log successful authentication (non-sensitive info only)
+        logger.debug(f"API authentication successful for owner: {row.owner}, tier: {row.tier}")
+        return APIKeyModel(key=row.key, owner=row.owner, tier=row.tier, created_at=row.created_at)
     
-    # Log successful authentication (non-sensitive info only)
-    logger.debug(f"API authentication successful for owner: {row.owner}, tier: {row.tier}")
-    return APIKeyModel(key=row.key, owner=row.owner, tier=row.tier, created_at=row.created_at)
+    # Authentication failed - log and reject
+    key_preview = api_key_header_value[:8] + "..." if len(api_key_header_value) > 8 else "***"
+    logger.warning(f"API authentication failed: Invalid or inactive API key (preview: {key_preview})")
+    
+    # Provide hint about master key if not configured
+    detail = "Invalid API key. Verify your X-API-Key header value."
+    if not settings.zeusonic_api_key:
+        logger.debug("Note: ZEUSONIC_API_KEY environment variable not configured (database-only mode)")
+    
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": "ApiKey"},
+    )

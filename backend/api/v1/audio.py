@@ -97,6 +97,43 @@ def _create_job_entry(filename: str, owner: Optional[str] = None) -> str:
 
 from backend.core.auth import get_api_key
 from backend.core.features import get_entitlements
+from backend.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+
+def _process_audio_job_bg(job_id: str, filename: str, owner: Optional[str] = None):
+    """Background task to process uploaded audio file.
+    
+    This simulates audio processing. Replace with actual processing logic.
+    Updates job status in database upon completion or failure.
+    """
+    import time
+    logger.info(f"Starting background processing for job {job_id}, file: {filename}")
+    
+    db = SessionLocal()
+    try:
+        # Simulate processing (replace with actual audio processing)
+        time.sleep(2)  # Simulate work
+        
+        # Update job status to completed
+        job = db.query(models.AudioJob).filter(models.AudioJob.job_id == job_id).first()
+        if job:
+            job.status = "completed"
+            db.commit()
+            logger.info(f"Job {job_id} processing completed successfully")
+    except Exception as e:
+        # Mark job as failed
+        try:
+            job = db.query(models.AudioJob).filter(models.AudioJob.job_id == job_id).first()
+            if job:
+                job.status = "failed"
+                db.commit()
+        except Exception:
+            pass
+        logger.error(f"Job {job_id} processing failed: {str(e)}")
+    finally:
+        db.close()
 
 
 @router.post("/audio/upload", response_model=UploadResponse, status_code=201)
@@ -164,6 +201,10 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
     # Create job entry (queued). Background worker will pick it up.
     job_id = _create_job_entry(dest.name, owner=api_key.owner)
     increment('uploads_queued')
+
+    # Dispatch background processing task
+    background_tasks.add_task(_process_audio_job_bg, job_id, dest.name, api_key.owner)
+    logger.info(f"Job {job_id} queued for background processing")
 
     return UploadResponse(
         job_id=UUID(job_id),
