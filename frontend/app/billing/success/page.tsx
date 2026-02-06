@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import AppLayout from '../../../components/AppLayout'
 import RequireAuth from '../../../components/auth/RequireAuth'
 import { useAuth } from '../../../components/auth/AuthProvider'
+import { config } from '../../../lib/config'
 
 export default function BillingSuccessPage() {
   const { token, setTier } = useAuth()
@@ -12,7 +13,7 @@ export default function BillingSuccessPage() {
   useEffect(() => {
     if (!token) return
 
-    fetch('/api/v1/billing/status', {
+    fetch(`${config.apiUrl}/api/v1/billing/status`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.ok ? r.json() : Promise.reject(r))

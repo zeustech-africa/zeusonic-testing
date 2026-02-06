@@ -5,6 +5,7 @@ import AppLayout from '../../components/AppLayout'
 import AudioProcessor from '../../components/AudioProcessor'
 import RequireAuth from '../../components/auth/RequireAuth'
 import { useAuth } from '../../components/auth/AuthProvider'
+import { config } from '../../lib/config'
 
 interface Project {
   id: number;
@@ -21,7 +22,7 @@ export default function StudioPage() {
   useEffect(() => {
     if (!token) return;
 
-    fetch('http://localhost:8000/api/v1/projects', {
+    fetch(`${config.apiUrl}/api/v1/projects`, {
       headers: {
         Authorization: `Bearer ${token}`,
       },

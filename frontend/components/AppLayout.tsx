@@ -14,6 +14,7 @@ import BetaOnboarding from './BetaOnboarding'
 import BetaSupport from './BetaSupport'
 import UploadDisabledBanner from './UploadDisabledBanner'
 import { useAuth } from './auth/AuthProvider'
+import { config } from '../lib/config'
 
 export default function AppLayout({ children, title }: { children: React.ReactNode; title?: string }) {
   const { token, tier, isAuthenticated } = useAuth()
@@ -29,7 +30,7 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
     let mounted = true
     const controller = new AbortController()
 
-    fetch('/api/v1/projects', {
+    fetch(`${config.apiUrl}/api/v1/projects`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
@@ -53,7 +54,7 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
     let mounted = true
     const controller = new AbortController()
 
-    fetch('/api/v1/billing/status', {
+    fetch(`${config.apiUrl}/api/v1/billing/status`, {
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })

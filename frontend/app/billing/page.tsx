@@ -5,6 +5,7 @@ import AppLayout from '../../components/AppLayout'
 import Button from '../../components/ui/Button'
 import RequireAuth from '../../components/auth/RequireAuth'
 import { useAuth } from '../../components/auth/AuthProvider'
+import { config } from '../../lib/config'
 
 export default function BillingPage() {
   const { token, tier, isReady } = useAuth()
@@ -21,7 +22,7 @@ export default function BillingPage() {
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/v1/billing/checkout', {
+      const res = await fetch(`${config.apiUrl}/api/v1/billing/checkout`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

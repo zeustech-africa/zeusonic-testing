@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from './auth/AuthProvider';
+import { config } from '../lib/config';
 
 interface AudioTrack {
   id: number;
@@ -49,7 +50,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/audio`, {
+      const response = await fetch(`${config.apiUrl}/api/v1/projects/${projectId}/audio`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -84,7 +85,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     try {
       const results = await Promise.all(
         list.map(async (track) => {
-          const res = await fetch(`http://localhost:8000/api/v1/audio/${track.id}/transform/status`, {
+          const res = await fetch(`${config.apiUrl}/api/v1/audio/${track.id}/transform/status`, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (!res.ok) {
@@ -123,7 +124,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     formData.append('file', file);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/audio`, {
+      const response = await fetch(`${config.apiUrl}/api/v1/projects/${projectId}/audio`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -150,7 +151,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/audio/${trackId}/mix`, {
+      const response = await fetch(`${config.apiUrl}/api/v1/audio/${trackId}/mix`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -172,7 +173,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     if (!token) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/audio/${trackId}/master`, {
+      const response = await fetch(`${config.apiUrl}/api/v1/audio/${trackId}/master`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -213,12 +214,12 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
   };
 
   const downloadProcessed = (trackId: number, processType: 'mix' | 'master') => {
-    const url = `http://localhost:8000/api/v1/audio/download/${trackId}/${processType}`;
+    const url = `${config.apiUrl}/api/v1/audio/download/${trackId}/${processType}`;
     downloadWithAuth(url, `track_${trackId}_${processType}.wav`);
   };
 
   const downloadTransform = (trackId: number) => {
-    const url = `http://localhost:8000/api/v1/audio/${trackId}/transform/download`;
+    const url = `${config.apiUrl}/api/v1/audio/${trackId}/transform/download`;
     downloadWithAuth(url, `track_${trackId}_transform.wav`);
   };
 
@@ -226,7 +227,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
     if (!token) return;
     const targetStyle = transformStyles[trackId] || 'amapiano';
     try {
-      const response = await fetch(`http://localhost:8000/api/v1/audio/${trackId}/transform`, {
+      const response = await fetch(`${config.apiUrl}/api/v1/audio/${trackId}/transform`, {
         method: 'POST',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -390,7 +391,7 @@ export default function AudioProcessor({ projectId }: AudioProcessorProps) {
               )}
 
               {/* Action Buttons */}
-              {track.status === 'analyzed' || track.status === 'mixed' || track.status === 'mastered' ? (
+              {['analyzed', 'mixed', 'mastered', 'mixing', 'mastering'].includes(track.status) ? (
                 <div className="flex gap-2 flex-wrap">
                   <button
                     onClick={() => triggerMix(track.id)}
