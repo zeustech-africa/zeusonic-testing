@@ -20,7 +20,7 @@ type AudioUploadPanelProps = {
   apiKey?: string
 }
 
-export default function AudioUploadPanel({
+function AudioUploadPanel({
   isDragging: propIsDragging,
   hasFile: propHasFile,
   isUploading: propIsUploading,
