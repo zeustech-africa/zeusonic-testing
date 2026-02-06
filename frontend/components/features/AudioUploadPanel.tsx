@@ -7,6 +7,7 @@ import Card from '../ui/Card'
 import Heading from '../ui/Heading'
 import Button from '../ui/Button'
 import FirstUseHint from '../ui/FirstUseHint'
+import { config } from '../../lib/config'
 
 type AudioUploadPanelProps = {
   isDragging?: boolean
@@ -76,7 +77,7 @@ export default function AudioUploadPanel({
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 3000)
 
-    fetch('/api/v1/meta', { signal: controller.signal })
+    fetch(`${config.apiUrl}/api/v1/meta`, { signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (!mounted) return
@@ -126,7 +127,7 @@ export default function AudioUploadPanel({
     // poll every 2s
     pollingRef.current = window.setInterval(async () => {
       try {
-        const res = await fetch(`/api/v1/audio/jobs/${jobId}`)
+        const res = await fetch(`${config.apiUrl}/api/v1/audio/jobs/${jobId}`)
         if (!res.ok) {
           setStatusText('Error fetching job status — please try again')
           return
@@ -180,7 +181,7 @@ export default function AudioUploadPanel({
       setDisabled(false)
       return
     }
-    xhr.open('POST', '/api/v1/audio/upload')
+    xhr.open('POST', `${config.apiUrl}/api/v1/audio/upload`)
     xhr.setRequestHeader('X-API-Key', key)
 
     xhr.upload.onprogress = (ev) => {

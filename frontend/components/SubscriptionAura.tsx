@@ -1,6 +1,7 @@
 "use client"
 
 import React, { useEffect } from 'react'
+import { config } from '../lib/config'
 
 function SubscriptionAuraInner({ targetId = 'center-canvas' }: { targetId?: string }) {
   useEffect(() => {
@@ -8,7 +9,7 @@ function SubscriptionAuraInner({ targetId = 'center-canvas' }: { targetId?: stri
     const key = typeof window !== 'undefined' ? window.localStorage.getItem('ZEUSONIC_API_KEY') : null
     if (!key) return
 
-    fetch('/api/v1/subscription', { headers: { 'X-API-Key': key } })
+    fetch(`${config.apiUrl}/api/v1/subscription`, { headers: { 'X-API-Key': key } })
       .then((r) => r.json())
       .then((d) => {
         if (!mounted) return

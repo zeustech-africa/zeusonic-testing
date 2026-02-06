@@ -1,6 +1,7 @@
 "use client"
 
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react'
+import { config } from '../../lib/config'
 
 const TOKEN_KEY = 'zeusonic_auth_token'
 const EMAIL_KEY = 'zeusonic_auth_email'
@@ -72,7 +73,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!token) return
 
-    fetch('/api/v1/billing/status', {
+    fetch(`${config.apiUrl}/api/v1/billing/status`, {
       headers: { Authorization: `Bearer ${token}` },
     })
       .then((r) => r.ok ? r.json() : Promise.reject(r))
