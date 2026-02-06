@@ -9,6 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     libpq-dev \
+    ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install
