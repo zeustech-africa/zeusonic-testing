@@ -1,4 +1,5 @@
 /** @type {import('next').NextConfig} */
+// Build timestamp: 2026-02-07 cache-bust
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
