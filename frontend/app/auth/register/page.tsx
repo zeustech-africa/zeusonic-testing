@@ -8,6 +8,7 @@ import Heading from '../../../components/ui/Heading'
 import Input from '../../../components/ui/Input'
 import Button from '../../../components/ui/Button'
 import Link from 'next/link'
+import { config } from '../../../lib/config'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -22,7 +23,7 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/auth/register', {
+      const res = await fetch(`${config.apiUrl}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

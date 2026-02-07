@@ -9,6 +9,7 @@ import Input from '../../../components/ui/Input'
 import Button from '../../../components/ui/Button'
 import Link from 'next/link'
 import { useAuth } from '../../../components/auth/AuthProvider'
+import { config } from '../../../lib/config'
 
 export default function LoginPage() {
   const router = useRouter()
@@ -27,7 +28,7 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/auth/login', {
+      const res = await fetch(`${config.apiUrl}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

@@ -8,6 +8,7 @@ import Heading from '../../../components/ui/Heading'
 import Input from '../../../components/ui/Input'
 import Button from '../../../components/ui/Button'
 import Link from 'next/link'
+import { config } from '../../../lib/config'
 
 export default function VerifyPage() {
   const router = useRouter()
@@ -25,10 +26,10 @@ export default function VerifyPage() {
     setLoading(true)
 
     try {
-      const res = await fetch('/auth/verify', {
+      const res = await fetch(`${config.apiUrl}/auth/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, code }),
+        body: JSON.stringify({ email, otp: code }),
       })
 
       if (!res.ok) {
