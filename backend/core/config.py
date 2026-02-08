@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional
+import json
 
 try:
     # Optional: load .env into environment variables if python-dotenv is installed
@@ -60,10 +61,9 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:3000"
     
     # CORS configuration
-    allowed_origins: list[str] = Field(
-        default_factory=list,
+    allowed_origins_raw: Optional[str] = Field(
+        default=None,
         validation_alias="ALLOWED_ORIGINS",
-        env_json=False,
     )
 
     # Paths (can be overridden via env vars)
@@ -111,6 +111,26 @@ class Settings(BaseSettings):
         if self.app_env == "development" and self.environment != "development":
             object.__setattr__(self, "app_env", self.environment)
         return self
+
+
+    @property
+    def allowed_origins(self) -> list[str]:
+        if not self.allowed_origins_raw:
+            return []
+
+        raw = self.allowed_origins_raw.strip()
+
+        # Try JSON array first
+        if raw.startswith("["):
+            try:
+                value = json.loads(raw)
+                if isinstance(value, list):
+                    return [str(v).strip() for v in value if str(v).strip()]
+            except Exception:
+                pass
+
+        # Fallback to comma-separated
+        return [v.strip() for v in raw.split(",") if v.strip()]
 
 
 settings = Settings()
