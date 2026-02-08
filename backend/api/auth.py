@@ -67,47 +67,95 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     - Returns: email, is_verified status, and confirmation message
     """
     email = payload.email.strip().lower()
+    logger.info(f"[REGISTER] Starting registration flow for: {email}")
 
     # Check if user already exists
-    existing = db.query(models.User).filter(models.User.email == email).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="Email already registered")
+    try:
+        existing = db.query(models.User).filter(models.User.email == email).first()
+        if existing:
+            logger.warning(f"[REGISTER] Email already exists: {email}")
+            raise HTTPException(status_code=409, detail="Email already registered")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[REGISTER] Error checking email uniqueness for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Database error during email check")
 
     # Create new user account
-    user = models.User(
-        email=email,
-        password_hash=hash_password(payload.password),
-        is_verified=False,
-        tier="FREE",
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
+    try:
+        user = models.User(
+            email=email,
+            password_hash=hash_password(payload.password),
+            is_verified=False,
+            tier="FREE",
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info(f"[REGISTER] User created successfully: {email} (id={user.id})")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[REGISTER] Error creating user for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create user account")
 
     # Generate 6-digit OTP
-    otp = _generate_otp()
-    otp_hash = _hash_otp(otp)
-    otp_expires_at = datetime.utcnow() + timedelta(minutes=settings.verification_code_minutes)
+    try:
+        otp = _generate_otp()
+        otp_hash = _hash_otp(otp)
+        logger.info(f"[REGISTER] OTP generated for {email}")
+    except Exception as e:
+        logger.error(f"[REGISTER] Error generating OTP for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate verification code")
+
+    # Calculate OTP expiry with defensive handling
+    try:
+        otp_expires_at = datetime.utcnow() + timedelta(minutes=settings.verification_code_minutes)
+        logger.info(f"[REGISTER] OTP expiry calculated: {otp_expires_at} (expires in {settings.verification_code_minutes} min)")
+    except Exception as e:
+        logger.error(f"[REGISTER] Error calculating OTP expiry: {type(e).__name__}: {e}")
+        # Fallback to 10 minutes if settings fail
+        otp_expires_at = datetime.utcnow() + timedelta(minutes=10)
+        logger.warning(f"[REGISTER] Using fallback OTP expiry: {otp_expires_at}")
 
     # Store hashed OTP on user account
-    user.otp_hash = otp_hash
-    user.otp_expires_at = otp_expires_at
-    db.add(user)
-    db.commit()
+    try:
+        user.otp_hash = otp_hash
+        user.otp_expires_at = otp_expires_at
+        logger.info(f"[REGISTER] OTP columns set on user (otp_expires_at={otp_expires_at})")
+        
+        db.add(user)
+        db.commit()
+        logger.info(f"[REGISTER] OTP persisted to database for {email}")
+    except AttributeError as e:
+        # This means the columns don't exist in the database
+        db.rollback()
+        logger.critical(f"[REGISTER] DATABASE SCHEMA ERROR: OTP columns missing on User model for {email}: {e}")
+        raise HTTPException(status_code=500, detail="Database schema error: verification columns not found. Please contact support.")
+    except Exception as e:
+        db.rollback()
+        logger.error(f"[REGISTER] Error storing OTP for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to store verification code")
 
     # Send OTP via Resend
     try:
         send_otp_email(email, otp)
-        logger.info(f"OTP email sent successfully to {email}")
+        logger.info(f"[REGISTER] OTP email sent successfully to {email}")
     except Exception as e:
-        logger.warning(f"Failed to send OTP email to {email}: {e}")
-        # In production, might want to retry or queue for later
+        # Email failure should NOT block registration in production
+        logger.warning(f"[REGISTER] Failed to send OTP email to {email}: {type(e).__name__}: {e}")
     
-    return {
-        "email": user.email,
-        "is_verified": user.is_verified,
-        "message": f"Verification code sent to {email}. Check your inbox.",
-    }
+    # Success - return response
+    try:
+        response_data = {
+            "email": user.email,
+            "is_verified": user.is_verified,
+            "message": f"Verification code sent to {email}. Check your inbox.",
+        }
+        logger.info(f"[REGISTER] Registration completed successfully for {email}")
+        return response_data
+    except Exception as e:
+        logger.error(f"[REGISTER] Error building response for {email}: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to generate response")
 
 
 @router.post("/verify-otp")
