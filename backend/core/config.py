@@ -60,7 +60,10 @@ class Settings(BaseSettings):
     frontend_base_url: str = "http://localhost:3000"
     
     # CORS configuration
-    allowed_origins: Optional[list[str]] = None
+    allowed_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias="ALLOWED_ORIGINS",
+    )
 
     # Paths (can be overridden via env vars)
     storage_path: Path = Path(project_root) / "backend" / "storage"
