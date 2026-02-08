@@ -58,6 +58,18 @@ class Subscription(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
 
+class PendingRegistration(Base):
+    """Temporary registration intent before OTP verification."""
+    __tablename__ = "pending_registrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    password_hash = Column(String(255), nullable=False)
+    otp_hash = Column(String(255), nullable=False)
+    otp_expires_at = Column(DateTime, nullable=False, index=True)
+    created_at = Column(DateTime, server_default=func.now(), nullable=False)
+
+
 class User(Base):
     __tablename__ = "users"
 

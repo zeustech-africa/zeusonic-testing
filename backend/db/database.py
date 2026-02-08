@@ -40,6 +40,7 @@ def create_tables():
             # Alembic is present: migrations should manage schema evolution
             # Guardrail: ensure critical auth columns exist on users table to prevent runtime 500s
             _ensure_users_columns(conn)
+            _ensure_pending_registrations_table(conn)
             return
 
         # Fallback: ensure columns exist for development without Alembic
@@ -153,5 +154,33 @@ def _ensure_users_columns(conn) -> None:
         conn.commit()
     except Exception:
         # Guardrail only; never block startup if this fails.
+        return
+
+
+def _ensure_pending_registrations_table(conn) -> None:
+    """Ensure pending_registrations table exists (safe, additive guardrail)."""
+    logger = logging.getLogger("zeusonic.backend.db.database")
+
+    try:
+        res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='pending_registrations'"))
+        if res.fetchone():
+            return
+
+        conn.execute(text("""
+            CREATE TABLE pending_registrations (
+                id INTEGER PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password_hash VARCHAR(255) NOT NULL,
+                otp_hash VARCHAR(255) NOT NULL,
+                otp_expires_at DATETIME NOT NULL,
+                created_at DATETIME DEFAULT (datetime('now'))
+            )
+        """))
+        conn.execute(text("CREATE INDEX idx_pending_email ON pending_registrations(email)"))
+        conn.execute(text("CREATE INDEX idx_pending_expires ON pending_registrations(otp_expires_at)"))
+        conn.commit()
+        logger.info("[DB] Created pending_registrations table at startup")
+    except Exception as e:
+        logger.warning("[DB] Failed to create pending_registrations table: %s", e)
         return
 
