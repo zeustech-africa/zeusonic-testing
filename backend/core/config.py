@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     allowed_origins: list[str] = Field(
         default_factory=list,
         validation_alias="ALLOWED_ORIGINS",
+        env_json=False,
     )
 
     # Paths (can be overridden via env vars)
