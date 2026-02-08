@@ -1,5 +1,6 @@
 from pathlib import Path
 from sqlalchemy import create_engine, text
+import logging
 from sqlalchemy.orm import sessionmaker, declarative_base
 
 from backend.core.config import settings
@@ -37,6 +38,8 @@ def create_tables():
 
         if has_alembic:
             # Alembic is present: migrations should manage schema evolution
+            # Guardrail: ensure critical auth columns exist on users table to prevent runtime 500s
+            _ensure_users_columns(conn)
             return
 
         # Fallback: ensure columns exist for development without Alembic
@@ -116,4 +119,39 @@ def create_tables():
             pass
 
         conn.commit()
+
+
+def _ensure_users_columns(conn) -> None:
+    """Ensure critical users columns exist (safe, additive guardrail)."""
+    logger = logging.getLogger("zeusonic.backend.db.database")
+
+    try:
+        res = conn.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='users'"))
+        if not res.fetchone():
+            return
+
+        res = conn.execute(text("PRAGMA table_info(users)"))
+        cols = [r[1] for r in res.fetchall()]
+
+        def add_column(col: str, ddl: str) -> None:
+            conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {ddl}"))
+            logger.warning("[DB] Added missing users.%s column at startup", col)
+
+        if "tier" not in cols:
+            add_column("tier", "VARCHAR(32) DEFAULT 'FREE'")
+        if "is_verified" not in cols:
+            add_column("is_verified", "BOOLEAN DEFAULT 0")
+        if "created_at" not in cols:
+            add_column("created_at", "DATETIME DEFAULT (datetime('now'))")
+        if "updated_at" not in cols:
+            add_column("updated_at", "DATETIME DEFAULT (datetime('now'))")
+        if "otp_hash" not in cols:
+            add_column("otp_hash", "VARCHAR(255)")
+        if "otp_expires_at" not in cols:
+            add_column("otp_expires_at", "DATETIME")
+
+        conn.commit()
+    except Exception:
+        # Guardrail only; never block startup if this fails.
+        return
 
