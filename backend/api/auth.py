@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import hashlib
 import secrets
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -24,9 +24,8 @@ class RegisterRequest(BaseModel):
 
 
 class RegisterResponse(BaseModel):
-    email: EmailStr
-    is_verified: bool
     message: str
+    registration_id: str
 
 
 class OtpVerifyRequest(BaseModel):
@@ -153,14 +152,22 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         # Don't fail registration if email fails
     
     return {
-        "email": email,
-        "is_verified": False,
-        "message": f"Verification code sent to {email}. Check your inbox and verify to complete registration.",
+        "message": "Verification code sent",
+        "registration_id": str(pending.id),
     }
 
 
 @router.post("/verify-otp")
-def verify_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)):
+def verify_otp(payload: OtpVerifyRequest, request: Request, db: Session = Depends(get_db)):
+    return _verify_otp_impl(payload, request, db)
+
+
+@router.post("/verify")
+def verify(payload: OtpVerifyRequest, request: Request, db: Session = Depends(get_db)):
+    return _verify_otp_impl(payload, request, db)
+
+
+def _verify_otp_impl(payload: OtpVerifyRequest, request: Request, db: Session):
     """
     Stage 2: Verify OTP and complete registration.
     
@@ -173,7 +180,8 @@ def verify_otp(payload: OtpVerifyRequest, db: Session = Depends(get_db)):
     User can then login with credentials.
     """
     email = payload.email.strip().lower()
-    logger.info("[AUTH][OTP] Starting OTP verification for: %s", email)
+    origin = request.headers.get("origin")
+    logger.info("[AUTH][OTP] Verify endpoint hit (origin=%s, email=%s)", origin, email)
     
     # Check if user already exists (completed registration)
     try:
@@ -298,7 +306,7 @@ def _verify_otp_legacy(payload: OtpVerifyRequest, db: Session, user: models.User
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
     """
     Login with email and password.
     
@@ -313,6 +321,8 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
         )
     
     email = payload.email.strip().lower()
+    origin = request.headers.get("origin")
+    logger.info("[AUTH][LOGIN] Login endpoint hit (origin=%s, email=%s)", origin, email)
     user = db.query(models.User).filter(models.User.email == email).first()
     
     if not user:
