@@ -81,14 +81,32 @@ def hash_password(password: str) -> str:
 
 
 def verify_password(password: str, password_hash: str) -> bool:
-    return pwd_context.verify(password, password_hash)
+    """Verify password against hash. Returns False on mismatch or error (never throws)."""
+    try:
+        result = pwd_context.verify(password, password_hash)
+        logger.debug("[AUTH][VERIFY_PASSWORD] Verification completed (result=%s)", result)
+        return result
+    except Exception as e:
+        logger.error("[AUTH][VERIFY_PASSWORD] Verification threw exception: %s", e, exc_info=True)
+        return False
 
 
 def create_access_token(subject: str) -> str:
-    secret = _require_jwt_secret()
-    expires = datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_minutes)
-    payload = {"sub": subject, "exp": expires}
-    return jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+    """Create JWT access token. Wraps exceptions for controlled error handling."""
+    try:
+        secret = _require_jwt_secret()
+        expires = datetime.utcnow() + timedelta(minutes=settings.jwt_access_token_minutes)
+        payload = {"sub": subject, "exp": expires}
+        logger.debug("[AUTH][CREATE_TOKEN] Encoding JWT (sub=%s, algorithm=%s, expires=%s)", 
+                     subject, settings.jwt_algorithm, expires)
+        token = jwt.encode(payload, secret, algorithm=settings.jwt_algorithm)
+        logger.debug("[AUTH][CREATE_TOKEN] JWT encode successful")
+        return token
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[AUTH][CREATE_TOKEN] JWT encoding failed: %s", e)
+        raise ValueError(f"Failed to create access token: {e}")
 
 
 def decode_access_token(token: str) -> str:

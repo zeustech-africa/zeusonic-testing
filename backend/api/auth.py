@@ -314,30 +314,72 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     - Requires email verification (is_verified = true)
     - Returns: JWT access token with 60-minute expiry
     """
-    if not settings.jwt_secret:
-        raise HTTPException(
-            status_code=500,
-            detail="Server configuration error: JWT_SECRET not set"
-        )
-    
     email = payload.email.strip().lower()
     origin = request.headers.get("origin")
-    logger.info("[AUTH][LOGIN] Login endpoint hit (origin=%s, email=%s)", origin, email)
-    user = db.query(models.User).filter(models.User.email == email).first()
+    
+    # ======= ENTRY LOGGING =======
+    logger.info("[AUTH][LOGIN] >>> LOGIN ENTRY (origin=%s, email=%s)", origin, email)
+    
+    # ======= ENVIRONMENT SECRET VALIDATION =======
+    try:
+        if not settings.jwt_secret:
+            logger.error("[AUTH][LOGIN] CRITICAL: JWT_SECRET not configured in environment")
+            raise HTTPException(
+                status_code=500,
+                detail="Server configuration error: JWT_SECRET not set"
+            )
+        logger.debug("[AUTH][LOGIN] JWT_SECRET validation passed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("[AUTH][LOGIN] Error validating JWT_SECRET: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+    
+    # ======= USER FETCH =======
+    try:
+        user = db.query(models.User).filter(models.User.email == email).first()
+        logger.info("[AUTH][LOGIN] User query completed (email=%s, found=%s)", email, bool(user))
+    except Exception as e:
+        logger.exception("[AUTH][LOGIN] Database error during user fetch for %s: %s", email, e)
+        raise HTTPException(status_code=500, detail="Database error")
     
     if not user:
+        logger.warning("[AUTH][LOGIN] User not found: %s", email)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    
+    logger.info("[AUTH][LOGIN] User found (id=%s, verified=%s)", user.id, user.is_verified)
+
+    # ======= PASSWORD VERIFICATION =======
+    try:
+        logger.debug("[AUTH][LOGIN] Starting password verification for %s", email)
+        password_valid = verify_password(payload.password, user.password_hash)
+        logger.info("[AUTH][LOGIN] Password verification completed (email=%s, valid=%s)", email, password_valid)
+    except Exception as e:
+        logger.exception("[AUTH][LOGIN] Password verification threw exception for %s: %s", email, e)
+        raise HTTPException(status_code=500, detail="Authentication error")
+    
+    if not password_valid:
+        logger.warning("[AUTH][LOGIN] Invalid password for %s", email)
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    # Verify password
-    if not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-
-    # Require email verification
+    # ======= VERIFICATION STATUS CHECK =======
     if not user.is_verified:
+        logger.warning("[AUTH][LOGIN] User not verified: %s", email)
         raise HTTPException(status_code=403, detail="Email not verified. Please verify your email first.")
+    
+    logger.info("[AUTH][LOGIN] User verification check passed (email=%s)", email)
 
-    # Create access token
-    token = create_access_token(subject=user.email)
+    # ======= JWT TOKEN CREATION =======
+    try:
+        logger.debug("[AUTH][LOGIN] Creating JWT token for %s", email)
+        token = create_access_token(subject=user.email)
+        logger.info("[AUTH][LOGIN] JWT token created successfully (email=%s)", email)
+    except Exception as e:
+        logger.exception("[AUTH][LOGIN] JWT token creation failed for %s: %s", email, e)
+        raise HTTPException(status_code=500, detail="Failed to create access token")
+    
+    # ======= SUCCESS =======
+    logger.info("[AUTH][LOGIN] <<< LOGIN SUCCESS (email=%s, token_length=%s)", email, len(token))
     return TokenResponse(
         access_token=token,
         expires_in=settings.jwt_access_token_minutes * 60,
