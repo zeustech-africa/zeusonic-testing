@@ -1,3 +1,143 @@
+# FINAL Authentication Correctness Report
+
+**Date:** February 9, 2026  
+**Status:** ✅ **FIXED & VERIFIED (LOCAL)**  
+**Scope:** Zeusonic Authentication System (Backend)
+
+---
+
+## Executive Summary
+
+The production login failure that occurred **after successful registration and OTP verification** was caused by a **mixed authentication state** between `users` and `pending_registrations`. In some cases, OTP verification completed but the `users.password_hash` remained empty or stale, causing login to **fail with 401**, and then **500** when the login path hit the “missing hash” guard.
+
+The fix makes the **users table authoritative** while ensuring OTP verification and login **repair or promote the correct password hash** into the `users` record. This guarantees that **verified users can always log in**, and **invalid credentials always return 401**.
+
+---
+
+## End-to-End Authentication State Audit
+
+### 1) Registration
+- **Endpoint:** POST `/auth/register`
+- **Flow:** Hash password → create `pending_registrations` record → send OTP
+- **Result:** No `users` row created yet
+
+### 2) OTP Verification
+- **Endpoint:** POST `/auth/verify-otp`
+- **Flow:** Validate OTP → create or update `users` record → mark `is_verified=true` → clean up pending
+- **Issue (pre-fix):** Existing unverified users could be verified without promoting the pending password hash into `users`.
+
+### 3) User Creation
+- **New users:** Created in `users` with `password_hash` copied from `pending_registrations`
+- **Existing unverified users (legacy):** Previously bypassed pending hash, leaving `users.password_hash` stale/missing
+
+### 4) Password Hashing
+- **Creation:** `hash_password()` in [backend/core/auth.py](backend/core/auth.py)
+- **Storage:** `pending_registrations.password_hash` → `users.password_hash`
+
+### 5) Login Verification
+- **Endpoint:** POST `/auth/login`
+- **Reads from:** `users` table only
+- **Password check:** `verify_password()` against `users.password_hash`
+
+---
+
+## Explicit Verifications
+
+**Where password hash is created**
+- `hash_password()` in [backend/core/auth.py](backend/core/auth.py)
+
+**Where it is stored**
+- Initially: `pending_registrations.password_hash`
+- Authoritative: `users.password_hash`
+
+**Which table login reads from**
+- `users`
+
+**Whether `pending_registrations` and `users` can diverge**
+- Yes. Cleanup failures or legacy/unverified user records can leave `pending_registrations` present while `users.password_hash` is empty or stale.
+
+**Whether duplicate or partial user records can exist**
+- Duplicate users are blocked by unique email, but **partial user records** can exist (e.g., unverified users missing a valid `password_hash`).
+
+---
+
+## Exact Reason Login Returned 401 → 500 (Production)
+
+1. **OTP verification succeeded** but in certain legacy/mixed-state cases the `users.password_hash` remained **empty or stale**.
+2. **Login used `users` only**, so `verify_password()` returned **False** → **401**.
+3. In subsequent attempts, the login guard saw a **missing hash** and raised **500**.
+
+---
+
+## Why It Only Happened After Verification
+
+Before verification, no `users` record (new flow) or the record was unverified (legacy flow). After verification, `users.is_verified` was set to `true`, but the password hash was not consistently promoted to the `users` record—creating a verified-but-unloggable state.
+
+---
+
+## Why Infra / CORS / Env Were Not the Cause
+
+- Registration and OTP endpoints worked consistently.
+- Login reached the backend, executed DB queries, and returned structured JSON errors.
+- The failure was deterministic and data-state related, not a transport or CORS error.
+- JWT_SECRET misconfig would fail **all** logins, not just post-verification accounts.
+
+---
+
+## Fix Implemented (Deterministic & Minimal)
+
+### 1) OTP Verification Promotes Pending Hash into `users`
+- If an existing unverified user is found **and** a pending registration exists, the OTP is validated against `pending_registrations` and the hash is **promoted** into `users` before verification is completed.
+
+### 2) Login Repairs Missing Hash (Authoritative `users` Record)
+- If `users.password_hash` is missing, login checks `pending_registrations` **once** and **repairs** the `users` record.
+- Authentication still only uses the **`users` record** after repair.
+- Missing hash now returns **401**, never 500.
+
+---
+
+## Resolution (Final)
+
+**Root cause:** A mixed auth state allowed OTP verification to mark users as verified **without guaranteeing** that `users.password_hash` was populated from `pending_registrations`, leaving verified users unable to authenticate.
+
+**Why it only appeared after verification:** The bad state only materialized once `is_verified=true` was set on a user whose password hash had not been promoted into `users`. Before verification, login is blocked by design.
+
+**Why infra/CORS/env were not the issue:** Requests reached the backend, DB queries executed, and JSON errors returned consistently. CORS misconfig or missing env vars would have caused **global** failures, not a post-verification-only pattern.
+
+**Why this fix is permanent:** OTP verification now **promotes the pending hash into `users`** for any existing unverified account, and login **repairs missing hashes** from pending records once. The `users` table remains the **single authoritative source** for login. All auth error paths return JSON with correct HTTP status (401 for invalid credentials, 403 for unverified).
+
+---
+
+## Tests Executed (Local)
+
+✅ **Register → verify → login (success)**
+- `register`: 202
+- `verify`: 200
+- `login_success`: 200
+
+✅ **Login with wrong password**
+- `login_wrong_password`: 401
+
+✅ **Login unverified user**
+- `login_unverified`: 403
+
+✅ **Login non-existent user**
+- `login_missing`: 401
+
+> Note: Test harness used FastAPI `TestClient` with a controlled OTP hash.
+
+---
+
+## Files Modified
+
+- [backend/api/auth.py](backend/api/auth.py)
+
+---
+
+---
+
+## Archived Report (Superseded)
+
 # Login Failure Root Cause Analysis & Remediation Report
 
 **Date:** February 9, 2026  

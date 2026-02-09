@@ -54,6 +54,27 @@ def _generate_otp() -> str:
     return f"{secrets.randbelow(1_000_000):06d}"
 
 
+def _validate_pending_otp(pending: models.PendingRegistration, provided_otp: str, email: str, db: Session) -> None:
+    """Validate pending registration OTP or raise HTTPException."""
+    now = datetime.utcnow()
+    if now > pending.otp_expires_at:
+        logger.warning("[AUTH][OTP] OTP expired for %s (expired at %s)", email, pending.otp_expires_at)
+        # Clean up expired pending registration
+        try:
+            db.delete(pending)
+            db.commit()
+        except Exception:
+            pass
+        raise HTTPException(status_code=400, detail="Verification code expired. Please register again.")
+
+    provided_otp_hash = _hash_otp(provided_otp)
+    if pending.otp_hash != provided_otp_hash:
+        logger.warning("[AUTH][OTP] Invalid OTP provided for %s", email)
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    logger.info("[AUTH][OTP] OTP validated for %s", email)
+
+
 @router.post("/register", response_model=RegisterResponse, status_code=202)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     """
@@ -186,56 +207,66 @@ def _verify_otp_impl(payload: OtpVerifyRequest, request: Request, db: Session):
     # Check if user already exists (completed registration)
     try:
         existing_user = db.query(models.User).filter(models.User.email == email).first()
-        if existing_user:
-            if existing_user.is_verified:
-                logger.warning("[AUTH][OTP] User already verified: %s", email)
-                raise HTTPException(status_code=400, detail="Email already verified. Please login.")
-            else:
-                # Legacy flow: user exists but not verified (has OTP on user table)
-                logger.info("[AUTH][OTP] Using legacy verification flow for: %s", email)
-                return _verify_otp_legacy(payload, db, existing_user)
+        if existing_user and existing_user.is_verified:
+            logger.warning("[AUTH][OTP] User already verified: %s", email)
+            raise HTTPException(status_code=400, detail="Email already verified. Please login.")
     except HTTPException:
         raise
     except Exception as e:
         logger.error("[AUTH][OTP] Error checking existing user for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Database error during verification")
 
-    # Look up pending registration
+    # Look up pending registration (authoritative OTP for new flow)
     try:
         pending = db.query(models.PendingRegistration).filter(
             models.PendingRegistration.email == email
         ).first()
-        
-        if not pending:
-            logger.warning("[AUTH][OTP] No pending registration found for: %s", email)
-            raise HTTPException(status_code=404, detail="No pending registration found. Please register first.")
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error("[AUTH][OTP] Error looking up pending registration for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Database error during verification")
 
-    # Check OTP expiry
-    now = datetime.utcnow()
-    if now > pending.otp_expires_at:
-        logger.warning("[AUTH][OTP] OTP expired for %s (expired at %s)", email, pending.otp_expires_at)
-        # Clean up expired pending registration
-        try:
-            db.delete(pending)
-            db.commit()
-        except Exception:
-            pass
-        raise HTTPException(status_code=400, detail="Verification code expired. Please register again.")
+    if existing_user and not existing_user.is_verified:
+        # If a pending registration exists, prefer it (new flow) and promote into the existing user record.
+        if pending:
+            _validate_pending_otp(pending, payload.otp, email, db)
 
-    # Validate OTP
-    provided_otp_hash = _hash_otp(payload.otp)
-    if pending.otp_hash != provided_otp_hash:
-        logger.warning("[AUTH][OTP] Invalid OTP provided for %s", email)
-        raise HTTPException(status_code=400, detail="Invalid verification code")
+            try:
+                existing_user.password_hash = pending.password_hash
+                existing_user.is_verified = True
+                existing_user.otp_hash = None
+                existing_user.otp_expires_at = None
+                db.add(existing_user)
+                db.commit()
+                logger.info("[AUTH][USER_UPDATE] Existing user verified via pending registration: %s (id=%s)", email, existing_user.id)
+            except Exception as e:
+                db.rollback()
+                logger.error("[AUTH][USER_UPDATE] Error updating existing user for %s: %s", email, e)
+                raise HTTPException(status_code=500, detail="Failed to verify user account")
 
-    logger.info("[AUTH][OTP] OTP validated for %s", email)
+            # Clean up pending registration
+            try:
+                db.delete(pending)
+                db.commit()
+                logger.info("[AUTH][OTP] Pending registration cleaned up for %s", email)
+            except Exception as e:
+                db.rollback()
+                logger.error("[AUTH][OTP] Error cleaning up pending registration for %s: %s", email, e)
+                logger.warning("[AUTH][OTP] Proceeding despite cleanup error for %s", email)
 
-    # Create user account
+            logger.info("[AUTH][OTP] Registration completed successfully for %s", email)
+            return {"message": "Email verified successfully. You can now login."}
+
+        # Legacy flow: user exists but not verified (has OTP on user table)
+        logger.info("[AUTH][OTP] Using legacy verification flow for: %s", email)
+        return _verify_otp_legacy(payload, db, existing_user)
+
+    if not pending:
+        logger.warning("[AUTH][OTP] No pending registration found for: %s", email)
+        raise HTTPException(status_code=404, detail="No pending registration found. Please register first.")
+
+    _validate_pending_otp(pending, payload.otp, email, db)
+
+    # Create user account - ATOMIC TRANSACTION
     try:
         user = models.User(
             email=email,
@@ -244,14 +275,15 @@ def _verify_otp_impl(payload: OtpVerifyRequest, request: Request, db: Session):
             tier="FREE",
         )
         db.add(user)
-        db.flush()  # Get user.id without committing yet
-        logger.info("[AUTH][USER_CREATE] User created: %s (id=%s, verified=True)", email, user.id)
+        db.commit()  # Commit user FIRST, before any cleanup
+        db.refresh(user)  # Refresh to get the committed id
+        logger.info("[AUTH][USER_CREATE] User created and committed: %s (id=%s, verified=True)", email, user.id)
     except Exception as e:
         db.rollback()
         logger.error("[AUTH][USER_CREATE] Error creating user for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Failed to create user account")
 
-    # Clean up pending registration
+    # Clean up pending registration - SEPARATE TRANSACTION
     try:
         db.delete(pending)
         db.commit()
@@ -259,7 +291,8 @@ def _verify_otp_impl(payload: OtpVerifyRequest, request: Request, db: Session):
     except Exception as e:
         db.rollback()
         logger.error("[AUTH][OTP] Error cleaning up pending registration for %s: %s", email, e)
-        raise HTTPException(status_code=500, detail="Failed to complete registration")
+        # Don't fail if cleanup fails - user is already created and verified
+        logger.warning("[AUTH][OTP] Proceeding despite cleanup error for %s", email)
 
     logger.info("[AUTH][OTP] Registration completed successfully for %s", email)
     return {"message": "Email verified successfully. You can now login."}
@@ -348,6 +381,32 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     logger.info("[AUTH][LOGIN] User found (id=%s, verified=%s)", user.id, user.is_verified)
+
+    # ======= REPAIR MISSING PASSWORD HASH (IF PRESENT IN PENDING) =======
+    if not user.password_hash:
+        try:
+            pending = db.query(models.PendingRegistration).filter(
+                models.PendingRegistration.email == email
+            ).first()
+        except Exception as e:
+            logger.exception("[AUTH][LOGIN] Database error during pending lookup for %s: %s", email, e)
+            raise HTTPException(status_code=500, detail="Database error")
+
+        if pending and pending.password_hash:
+            try:
+                user.password_hash = pending.password_hash
+                db.add(user)
+                db.commit()
+                logger.warning("[AUTH][LOGIN] Repaired missing password_hash from pending registration (email=%s, id=%s)", email, user.id)
+            except Exception as e:
+                db.rollback()
+                logger.exception("[AUTH][LOGIN] Failed to repair password_hash for %s: %s", email, e)
+                raise HTTPException(status_code=500, detail="Database error")
+
+    # ======= VALIDATE PASSWORD HASH EXISTS =======
+    if not user.password_hash:
+        logger.error("[AUTH][LOGIN] Missing password_hash for %s (id=%s)", email, user.id)
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
     # ======= PASSWORD VERIFICATION =======
     try:
