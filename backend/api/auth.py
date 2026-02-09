@@ -382,27 +382,6 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     
     logger.info("[AUTH][LOGIN] User found (id=%s, verified=%s)", user.id, user.is_verified)
 
-    # ======= REPAIR MISSING PASSWORD HASH (IF PRESENT IN PENDING) =======
-    if not user.password_hash:
-        try:
-            pending = db.query(models.PendingRegistration).filter(
-                models.PendingRegistration.email == email
-            ).first()
-        except Exception as e:
-            logger.exception("[AUTH][LOGIN] Database error during pending lookup for %s: %s", email, e)
-            raise HTTPException(status_code=500, detail="Database error")
-
-        if pending and pending.password_hash:
-            try:
-                user.password_hash = pending.password_hash
-                db.add(user)
-                db.commit()
-                logger.warning("[AUTH][LOGIN] Repaired missing password_hash from pending registration (email=%s, id=%s)", email, user.id)
-            except Exception as e:
-                db.rollback()
-                logger.exception("[AUTH][LOGIN] Failed to repair password_hash for %s: %s", email, e)
-                raise HTTPException(status_code=500, detail="Database error")
-
     # ======= VALIDATE PASSWORD HASH EXISTS =======
     if not user.password_hash:
         logger.error("[AUTH][LOGIN] Missing password_hash for %s (id=%s)", email, user.id)
