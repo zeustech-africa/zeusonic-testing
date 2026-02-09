@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 from backend.db.database import get_db, SessionLocal
 from backend.db import models
 from backend.core.config import settings
+from backend.core.logging import get_logger
 
 import jwt
 from passlib.context import CryptContext
@@ -20,6 +21,7 @@ api_key_header = APIKeyHeader(name=APIKEY_NAME, auto_error=False)
 bearer_scheme = HTTPBearer(auto_error=False)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = get_logger(__name__)
 
 
 class APIKeyModel(BaseModel):
@@ -63,7 +65,11 @@ def _require_jwt_secret() -> str:
 
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        logger.exception("[AUTH][HASH] Password hashing failed: %s", e)
+        raise ValueError("Failed to hash password")
 
 
 def verify_password(password: str, password_hash: str) -> bool:
