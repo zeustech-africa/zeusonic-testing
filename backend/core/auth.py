@@ -15,6 +15,7 @@ from backend.core.logging import get_logger
 
 import jwt
 from passlib.context import CryptContext
+import bcrypt
 
 APIKEY_NAME = "X-API-Key"
 api_key_header = APIKeyHeader(name=APIKEY_NAME, auto_error=False)
@@ -68,8 +69,15 @@ def hash_password(password: str) -> str:
     try:
         return pwd_context.hash(password)
     except Exception as e:
-        logger.exception("[AUTH][HASH] Password hashing failed: %s", e)
-        raise ValueError("Failed to hash password")
+        logger.exception("[AUTH][HASH] Password hashing failed via passlib: %s", e)
+        # Fallback: direct bcrypt hashing (same algorithm, avoid passlib backend issues)
+        try:
+            salt = bcrypt.gensalt()
+            hashed = bcrypt.hashpw(password.encode("utf-8"), salt)
+            return hashed.decode("utf-8")
+        except Exception as fallback_error:
+            logger.exception("[AUTH][HASH] Password hashing failed via bcrypt fallback: %s", fallback_error)
+            raise ValueError("Failed to hash password")
 
 
 def verify_password(password: str, password_hash: str) -> bool:

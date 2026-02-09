@@ -14,6 +14,7 @@ Local environments often have compatible bcrypt binaries already installed. Rend
    - passlib==1.7.4
    - bcrypt==4.0.1
 2. **Defensive hashing** in `hash_password()` with try/except logging and a clean error raise.
+3. **Fallback hashing path** using direct `bcrypt` if Passlib backend fails, while preserving bcrypt algorithm and hash format.
 
 ## Why This Fix Is Safe
 - Keeps the same hashing algorithm (bcrypt).
