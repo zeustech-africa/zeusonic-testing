@@ -28,7 +28,10 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const res = await fetch(`${config.apiUrl}/auth/login`, {
+      const loginUrl = `${config.apiUrl}/auth/login`
+      console.info('[AUTH][LOGIN] Request URL:', loginUrl)
+
+      const res = await fetch(loginUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),
@@ -36,6 +39,7 @@ export default function LoginPage() {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
+        console.warn('[AUTH][LOGIN] Non-OK response:', res.status, data)
         throw new Error(data?.detail || 'Invalid credentials')
       }
 
@@ -45,7 +49,8 @@ export default function LoginPage() {
       login(data.access_token)
       router.push(next)
     } catch (err: any) {
-      setError(err.message || 'Login failed')
+      console.error('[AUTH][LOGIN] Request failed:', err)
+      setError(err?.message || 'Login failed')
     } finally {
       setLoading(false)
     }
