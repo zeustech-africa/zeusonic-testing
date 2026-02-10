@@ -1,13 +1,13 @@
 "use client"
 
 import React, { useRef, useState, useEffect, useMemo } from 'react'
-import useLongPress from '../hooks/useLongPress'
 import EmptyState from '../ui/EmptyState'
 import Card from '../ui/Card'
 import Heading from '../ui/Heading'
 import Button from '../ui/Button'
 import FirstUseHint from '../ui/FirstUseHint'
 import { config } from '../../lib/config'
+import { useAuth } from '../auth/AuthProvider'
 
 type AudioUploadPanelProps = {
   isDragging?: boolean
@@ -16,8 +16,10 @@ type AudioUploadPanelProps = {
   disabled?: boolean
   /** When true the component performs real uploads to the backend */
   live?: boolean
-  /** Optional API key to use for uploads; falls back to localStorage 'ZEUSONIC_API_KEY' */
-  apiKey?: string
+  /** Project id used for JWT-scoped uploads */
+  projectId?: number
+  /** Optional callback with newly created track id */
+  onUploaded?: (trackId: number) => void
 }
 
 function AudioUploadPanel({
@@ -26,29 +28,19 @@ function AudioUploadPanel({
   isUploading: propIsUploading,
   disabled: propDisabled,
   live = false,
-  apiKey: propApiKey,
+  projectId,
+  onUploaded,
 }: AudioUploadPanelProps) {
+  const { token } = useAuth()
   // internal state when not driven by props
   const [file, setFile] = useState<File | null>(null)
   const [isUploading, setIsUploading] = useState(false)
   const [disabled, setDisabled] = useState(false)
   const [maintenanceDisabled, setMaintenanceDisabled] = useState<boolean | undefined>(undefined)
   const [statusText, setStatusText] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<string | null>(null)
   const [progress, setProgress] = useState<number | null>(null)
-  const [showUpgradeCTA, setShowUpgradeCTA] = useState(false)
   const statusId = useMemo(() => `upload-status-${Math.random().toString(36).slice(2,8)}`, [])
-
-  // long-press hook for tooltips (touch) — target the local ref to avoid global queries
-  const upgradeRef = useRef<HTMLDivElement | null>(null)
-  const { onTouchStart, onTouchEnd } = useLongPress(() => {
-    const el = upgradeRef.current
-    if (!el) return
-    el.classList.add('tooltip-active')
-    setTimeout(() => { el.classList.remove('tooltip-active') }, 1500)
-  }, 700)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const pollingRef = useRef<number | null>(null)
 
   // derive visible states: prefer explicit props when provided
   const isDragging = propIsDragging ?? false
@@ -61,15 +53,6 @@ function AudioUploadPanel({
   }`
 
   const rootClass = ` ${disabledVisible ? 'opacity-50 cursor-not-allowed' : ''}`
-
-  useEffect(() => {
-    return () => {
-      // clear polling when unmounting
-      if (pollingRef.current) {
-        window.clearInterval(pollingRef.current)
-      }
-    }
-  }, [])
 
   // Fetch server meta to see if uploads are disabled for maintenance
   useEffect(() => {
@@ -111,58 +94,8 @@ function AudioUploadPanel({
     if (f) {
       setFile(f)
       setStatusText(null)
-      setJobStatus(null)
       setProgress(null)
-      setShowUpgradeCTA(false)
     }
-  }
-
-  function getApiKey() {
-    if (propApiKey) return propApiKey
-    if (typeof window !== 'undefined') return window.localStorage.getItem('ZEUSONIC_API_KEY') || undefined
-    return undefined
-  }
-
-  function startPolling(jobId: string) {
-    // poll every 2s
-    pollingRef.current = window.setInterval(async () => {
-      try {
-        const res = await fetch(`${config.apiUrl}/api/v1/audio/jobs/${jobId}`)
-        if (!res.ok) {
-          setStatusText('Error fetching job status — please try again')
-          return
-        }
-        const data = await res.json()
-        setJobStatus(data.status)
-        if (data.status === 'completed') {
-          setStatusText('Complete — your audio is ready. Check Library to download or preview it.')
-          setJobStatus('completed')
-          if (pollingRef.current) {
-            window.clearInterval(pollingRef.current)
-            pollingRef.current = null
-          }
-          setTimeout(() => setIsUploading(false), 200)
-        } else if (data.status === 'failed') {
-          setStatusText('Failed — we could not process this file. Try re-uploading or check format. If it persists, report an issue.')
-          setJobStatus('failed')
-          if (pollingRef.current) {
-            window.clearInterval(pollingRef.current)
-            pollingRef.current = null
-          }
-          setTimeout(() => setIsUploading(false), 200)
-        } else if (data.status === 'processing') {
-          setStatusText('Processing — we’re working on your audio now. This can take a few moments.')
-          setJobStatus('processing')
-        } else if (data.status === 'queued') {
-          setStatusText('Queued — your file is in line and will be processed shortly.')
-          setJobStatus('queued')
-        } else {
-          setStatusText(`Job ${data.status}`)
-        }
-      } catch (err) {
-        setStatusText('Network error while checking job status — please check your connection')
-      }
-    }, 2000)
   }
 
   function uploadLive() {
@@ -170,19 +103,25 @@ function AudioUploadPanel({
       setStatusText('No file selected')
       return
     }
-    const xhr = new XMLHttpRequest()
-    const fd = new FormData()
-    fd.append('file', file)
-
-    const key = getApiKey()
-    if (!key) {
-      setStatusText('Missing API key — set ZEUSONIC_API_KEY in localStorage')
+    if (!projectId) {
+      setStatusText('Select a project before uploading.')
       setIsUploading(false)
       setDisabled(false)
       return
     }
-    xhr.open('POST', `${config.apiUrl}/api/v1/audio/upload`)
-    xhr.setRequestHeader('X-API-Key', key)
+    if (!token) {
+      setStatusText('Authentication required to upload.')
+      setIsUploading(false)
+      setDisabled(false)
+      return
+    }
+
+    const xhr = new XMLHttpRequest()
+    const fd = new FormData()
+    fd.append('file', file)
+
+    xhr.open('POST', `${config.apiUrl}/api/v1/projects/${projectId}/audio`)
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`)
 
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) {
@@ -195,9 +134,11 @@ function AudioUploadPanel({
       if (xhr.status >= 200 && xhr.status < 300) {
         try {
           const data = JSON.parse(xhr.responseText)
-          const jobId = data.job_id
-          setStatusText('Upload complete, polling job status...')
-          startPolling(jobId)
+          const trackId = data.id
+          setStatusText('Upload complete — analysis running in the background.')
+          if (typeof trackId === 'number') {
+            onUploaded?.(trackId)
+          }
         } catch (e) {
           setStatusText('Upload succeeded but response parse failed')
         }
@@ -207,9 +148,6 @@ function AudioUploadPanel({
           const body = JSON.parse(xhr.responseText)
           if (body && body.detail) {
             setStatusText(String(body.detail))
-            if (String(body.detail).toLowerCase().includes('upgrade')) {
-              setShowUpgradeCTA(true)
-            }
           } else {
             setStatusText(`Upload failed (${xhr.status})`)
           }
@@ -231,7 +169,7 @@ function AudioUploadPanel({
     }
 
     // instrumentation: lightweight log (dev only)
-    if (process.env.NODE_ENV === 'development') console.info('[upload] attempt', { filename: file.name, owner: propApiKey })
+    if (process.env.NODE_ENV === 'development') console.info('[upload] attempt', { filename: file.name, projectId })
 
     setIsUploading(true)
     setDisabled(true)
@@ -246,16 +184,7 @@ function AudioUploadPanel({
     if (live) {
       uploadLive()
     } else {
-      // keep legacy behavior for stories: set uploading flag for short period and show success
-      setIsUploading(true)
-      setDisabled(true)
-      setStatusText('Uploading (simulated)')
-      setTimeout(() => {
-        setIsUploading(false)
-        setDisabled(false)
-        setStatusText('Upload complete (simulated)')
-        setFile(null)
-      }, 1200)
+      setStatusText('Live upload disabled in this view.')
     }
   }
 
@@ -293,21 +222,7 @@ function AudioUploadPanel({
             </div>
 
             {/* minimal visual indicator for processing */}
-            <div aria-hidden className={`ml-2 rounded-full w-3 h-3 ${jobStatus === 'processing' ? 'bg-accent glow-cyan processing-pulse' : jobStatus === 'failed' ? 'bg-danger' : 'bg-transparent'}`} />
-
-            {showUpgradeCTA && (
-              <div className="ml-2 flex items-center gap-2">
-                <div ref={upgradeRef} className="tooltip" data-tooltip="Upgrade to unlock this feature" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-                  <Button variant="upgrade" size="sm" onClick={() => { if (process.env.NODE_ENV === 'development') console.info('[gated] upgrade-click'); window.alert('Upgrade flow not implemented') }} aria-disabled={false} aria-describedby={statusId} aria-label="Upgrade to unlock — opens upgrade dialog">
-                    Upgrade to unlock
-                  </Button>
-                </div>
-                <div className="upgrade-hint">
-                  {/* First-use hint for the upgrade CTA */}
-                  <FirstUseHint storageKey="zeusonic_hint_upgrade_v1" message="Upgrade removes limits and unlocks downloads and longer processing times." />
-                </div>
-              </div>
-            )}
+            <div aria-hidden className={`ml-2 rounded-full w-3 h-3 ${isUploadingVisible ? 'bg-accent glow-cyan processing-pulse' : 'bg-transparent'}`} />
 
             <Button variant="primary" disabled={disabledVisible || isUploadingVisible} size="md" onClick={handleUploadClick} aria-disabled={disabledVisible || isUploadingVisible} aria-busy={isUploadingVisible} aria-describedby={statusId}>
               {isUploadingVisible ? 'Uploading...' : 'Upload'}
@@ -318,7 +233,7 @@ function AudioUploadPanel({
         {/* Empty states */}
         {!hasFile && !isUploading && !statusText && <div className="mt-4"><EmptyState title="No uploads yet" body="Upload audio files to start generating sounds and tracks." /></div>}
 
-        {jobStatus === 'failed' && <div className="mt-4"><EmptyState title="Job failed" body="Something went wrong while processing. Try re-uploading or check file format." /></div>}
+        {maintenanceDisabled && <div className="mt-4"><EmptyState title="Uploads paused" body="Maintenance mode enabled. Try again shortly." /></div>}
       </div>
     </Card>
   )

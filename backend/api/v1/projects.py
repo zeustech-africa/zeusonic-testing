@@ -102,3 +102,21 @@ def list_projects(user: models.User = Depends(get_current_verified_user), db: Se
             for row in rows
         ]
     )
+
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse)
+def get_project(project_id: int, user: models.User = Depends(get_current_verified_user), db: Session = Depends(get_db)):
+    project = db.query(models.Project).filter(
+        models.Project.id == project_id,
+        models.Project.user_id == user.id,
+    ).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return ProjectResponse(
+        id=project.id,
+        name=project.name,
+        metadata=project.meta,
+        created_at=project.created_at,
+        updated_at=project.updated_at,
+    )

@@ -95,8 +95,6 @@ def _create_job_entry(filename: str, owner: Optional[str] = None) -> str:
 
 
 
-from backend.core.auth import get_api_key
-from backend.core.features import get_entitlements
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
@@ -136,88 +134,17 @@ def _process_audio_job_bg(job_id: str, filename: str, owner: Optional[str] = Non
         db.close()
 
 
-@router.post("/audio/upload", response_model=UploadResponse, status_code=201)
-async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = File(...), api_key = Security(get_api_key)):
-    """Upload a single audio file (wav, mp3, m4a). Max 20 MB.
-
-    The file is saved locally and a background job is queued for processing.
-    Returns an immediate response with a job_id.
-
-    Authentication: requires header `X-API-Key`.
-    """
-    # Operational counter: attempted
-    from backend.core.ops import increment
-    increment('uploads_attempted')
-
-    # Server-authoritative maintenance switch
-    if settings.disable_uploads:
-        increment('uploads_failed')
-        raise HTTPException(status_code=503, detail='Uploads temporarily paused for maintenance.')
-
-    if not file.filename:
-        increment('uploads_failed')
-        raise HTTPException(status_code=400, detail="No filename provided")
-
-    ext = _get_extension(file.filename)
-    if ext not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=(f"Unsupported file extension: .{ext}. Supported: {', '.join(sorted(ALLOWED_EXTENSIONS))}"),
-        )
-
-    # Content type validation: accept audio/* or infer from file extension
-    # (Some clients/platforms like macOS may not detect audio MIME type correctly)
-    is_valid_content_type = (
-        file.content_type and file.content_type.startswith("audio/")
-    ) or ext in ALLOWED_EXTENSIONS
-    
-    if not is_valid_content_type:
-        raise HTTPException(status_code=400, detail=f"Unsupported content type: {file.content_type}. Expected audio file.")
-
-    # Create a safe, unique filename and avoid overwriting
-    for _ in range(10):
-        unique_name = f"{uuid4().hex}.{ext}"
-        dest = STORAGE_DIR / unique_name
-        if not dest.exists():
-            break
-    else:
-        raise HTTPException(status_code=500, detail="Failed to generate unique filename")
-
-    size = await _save_stream(file, dest, MAX_FILE_SIZE)
-
-    # Resolve entitlements (Subscription > ApiKey.tier fallback)
-    ent = get_entitlements(api_key.owner, api_key.tier)
-    limit = ent.get('entitlements', {}).get('max_jobs_per_month')
-
-    if limit:
-        # Count jobs by this owner in last 30 days
-        from datetime import datetime, timedelta
-
-        cutoff = datetime.utcnow() - timedelta(days=30)
-        db = SessionLocal()
-        try:
-            count = db.query(models.AudioJob).filter(models.AudioJob.owner == api_key.owner, models.AudioJob.created_at >= cutoff).count()
-        finally:
-            db.close()
-        if count >= limit:
-            increment('uploads_failed')
-            raise HTTPException(status_code=403, detail="Monthly job limit reached for your subscription tier")
-
-    # Create job entry (queued). Background worker will pick it up.
-    job_id = _create_job_entry(dest.name, owner=api_key.owner)
-    increment('uploads_queued')
-
-    # Dispatch background processing task
-    background_tasks.add_task(_process_audio_job_bg, job_id, dest.name, api_key.owner)
-    logger.info(f"Job {job_id} queued for background processing")
-
-    return UploadResponse(
-        job_id=UUID(job_id),
-        filename=dest.name,
-        content_type=file.content_type,
-        size_bytes=size,
-        status="queued",
+def _legacy_upload_disabled():
+    raise HTTPException(
+        status_code=410,
+        detail="Legacy API-key uploads are disabled. Use JWT project upload: POST /api/v1/projects/{project_id}/audio.",
     )
+
+
+@router.post("/audio/upload", response_model=UploadResponse, status_code=201)
+async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """Legacy upload disabled. Use JWT project upload instead."""
+    _legacy_upload_disabled()
 
 
 from backend.db.database import get_db
@@ -225,53 +152,21 @@ from sqlalchemy.orm import Session
 
 
 @router.get("/audio/jobs/{job_id}", response_model=JobModel)
-async def get_job(job_id: str, api_key = Depends(get_api_key), db: Session = Depends(get_db)):
-    """Return job metadata and status for a given job_id."""
-    row = db.query(models.AudioJob).filter(models.AudioJob.job_id == job_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return JobModel(**{
-        "job_id": row.job_id,
-        "filename": row.filename,
-        "status": row.status,
-        "created_at": row.created_at,
-        "updated_at": row.updated_at,
-    })
+async def get_job(job_id: str, db: Session = Depends(get_db)):
+    """Legacy job endpoint disabled. Use project-scoped track endpoints."""
+    _legacy_upload_disabled()
 
 
 from fastapi.responses import FileResponse
 
 
 @router.get('/audio/download/{job_id}')
-async def download_audio(job_id: str, api_key = Depends(get_api_key), db: Session = Depends(get_db)):
-    """Download the processed audio for a job if the subscription tier allows it."""
-    row = db.query(models.AudioJob).filter(models.AudioJob.job_id == job_id).first()
-    if not row:
-        raise HTTPException(status_code=404, detail='Job not found')
-
-    ent = get_entitlements(api_key.owner, api_key.tier)
-    if not ent.get('entitlements', {}).get('can_download_audio'):
-        raise HTTPException(status_code=403, detail='Downloads are available for paid plans. Upgrade to unlock.')
-
-    file_path = STORAGE_DIR / row.filename
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail='Output file not found')
-
-    return FileResponse(path=str(file_path), filename=row.filename, media_type='application/octet-stream')
+async def download_audio(job_id: str, db: Session = Depends(get_db)):
+    """Legacy download endpoint disabled. Use project-scoped track endpoints."""
+    _legacy_upload_disabled()
 
 
 @router.get("/audio/jobs", response_model=JobListResponse)
-async def list_jobs(limit: int = 20, api_key = Depends(get_api_key), db: Session = Depends(get_db)):
-    """List recent jobs, newest first. Limit defaults to 20."""
-    rows = db.query(models.AudioJob).order_by(models.AudioJob.created_at.desc()).limit(max(0, limit)).all()
-    job_models = [
-        JobModel(
-            job_id=r.job_id,
-            filename=r.filename,
-            status=r.status,
-            created_at=r.created_at,
-            updated_at=r.updated_at,
-        )
-        for r in rows
-    ]
-    return JobListResponse(jobs=job_models)
+async def list_jobs(limit: int = 20, db: Session = Depends(get_db)):
+    """Legacy job listing disabled. Use project-scoped track endpoints."""
+    _legacy_upload_disabled()

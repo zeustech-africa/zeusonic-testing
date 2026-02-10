@@ -58,6 +58,20 @@ html, body {
 .processing-pulse { animation: pulse 1.6s ease-in-out infinite; box-shadow: 0 6px 18px rgba(0,0,0,0.4); }
 @keyframes pulse { 0% { transform: scale(1); opacity: 0.95 } 50% { transform: scale(1.02); opacity: 1 } 100% { transform: scale(1); opacity: 0.95 } }
 
+/* Studio meters (visual only) */
+.studio-meter { display: flex; gap: 3px; margin-top: 6px; height: 10px; align-items: flex-end; }
+.studio-meter-bar { width: 4px; height: 6px; border-radius: 2px; background: linear-gradient(180deg, rgba(56,189,248,0.9), rgba(59,130,246,0.5)); animation: meter 1.2s ease-in-out infinite; }
+.studio-meter-bar:nth-child(2) { animation-delay: 0.2s; height: 8px; }
+.studio-meter-bar:nth-child(3) { animation-delay: 0.4s; height: 10px; }
+.studio-meter-bar:nth-child(4) { animation-delay: 0.1s; height: 7px; }
+.studio-meter-bar:nth-child(5) { animation-delay: 0.3s; height: 9px; }
+
+@keyframes meter {
+  0% { transform: scaleY(0.6); opacity: 0.7; }
+  50% { transform: scaleY(1.2); opacity: 1; }
+  100% { transform: scaleY(0.6); opacity: 0.7; }
+}
+
 /* Respect reduced motion preferences */
 @media (prefers-reduced-motion: reduce) {
   .tier-pro .badge-inner { animation: none !important }
@@ -133,4 +147,32 @@ html, body {
 .btn { transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease }
 .btn:active { transform: scale(0.99) }
 .btn-primary[aria-busy='true'] { transform: scale(1.01); opacity: 0.98 }
+
+/* Knob-style sliders */
+input[type='range'].studio-knob {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(76, 29, 149, 0.5), rgba(236, 72, 153, 0.6));
+  outline: none;
+}
+input[type='range'].studio-knob::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #fff, #a855f7 40%, #6d28d9 70%);
+  box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+  border: 1px solid rgba(255,255,255,0.4);
+}
+input[type='range'].studio-knob::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #fff, #a855f7 40%, #6d28d9 70%);
+  border: 1px solid rgba(255,255,255,0.4);
+}
 

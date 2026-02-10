@@ -4,6 +4,7 @@
 from datetime import datetime, timedelta
 import hashlib
 import secrets
+import os
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request, Response
 from pydantic import BaseModel, EmailStr, Field
@@ -57,6 +58,10 @@ def _hash_otp(otp: str) -> str:
 def _generate_otp() -> str:
     """Generate a 6-digit OTP."""
     return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _get_auth_mode() -> str:
+    return os.getenv("AUTH_MODE", "PROD").upper()
 
 
 def _validate_pending_otp(pending: models.PendingRegistration, provided_otp: str, email: str, db: Session) -> None:
@@ -143,7 +148,7 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
         raise HTTPException(status_code=500, detail="Failed to hash password")
 
     # DEV mode: create user immediately, skip OTP
-    if settings.auth_mode.upper() == "DEV":
+    if _get_auth_mode() == "DEV":
         try:
             user = models.User(
                 email=email,
@@ -209,7 +214,7 @@ def register(payload: RegisterRequest, response: Response, db: Session = Depends
 
 @router.post("/verify-otp")
 def verify_otp(payload: OtpVerifyRequest, request: Request, db: Session = Depends(get_db)):
-    if settings.auth_mode.upper() == "DEV":
+    if _get_auth_mode() == "DEV":
         raise HTTPException(status_code=410, detail="OTP disabled in DEV mode")
     return _verify_otp_impl(payload, request, db)
 

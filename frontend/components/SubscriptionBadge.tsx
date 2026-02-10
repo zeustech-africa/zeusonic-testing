@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { config } from '../lib/config'
+import { useAuth } from './auth/AuthProvider'
 
 type SubInfo = {
   plan_code: string | null
@@ -13,16 +14,16 @@ type SubInfo = {
 
 function SubscriptionBadgeInner() {
   const [info, setInfo] = useState<SubInfo | null>(null)
+  const { token } = useAuth()
 
   useEffect(() => {
     let mounted = true
-    const key = typeof window !== 'undefined' ? window.localStorage.getItem('ZEUSONIC_API_KEY') : null
-    if (!key) return
+    if (!token) return
 
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 5000)
 
-    fetch(`${config.apiUrl}/api/v1/subscription`, { headers: { 'X-API-Key': key }, signal: controller.signal })
+    fetch(`${config.apiUrl}/api/v1/billing/status`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
       .then((r) => r.json())
       .then((d) => {
         if (!mounted) return
@@ -33,7 +34,7 @@ function SubscriptionBadgeInner() {
       .finally(() => clearTimeout(timeout))
 
     return () => { mounted = false; controller.abort(); clearTimeout(timeout) }
-  }, [])
+  }, [token])
 
   if (!info) return <div className="text-muted">Tier: —</div>
 

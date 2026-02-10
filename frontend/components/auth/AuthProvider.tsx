@@ -6,7 +6,6 @@ import { config } from '../../lib/config'
 const TOKEN_KEY = 'zeusonic_auth_token'
 const EMAIL_KEY = 'zeusonic_auth_email'
 const TIER_KEY = 'zeusonic_auth_tier'
-const API_KEY_KEY = 'zeusonic_api_key'
 
 export type AuthUser = {
   email: string
@@ -15,11 +14,10 @@ export type AuthUser = {
 type AuthContextValue = {
   user: AuthUser | null
   token: string | null
-  apiKey: string | null
   tier: string
   isAuthenticated: boolean
   isReady: boolean
-  login: (token: string, apiKey?: string) => void
+  login: (token: string) => void
   logout: () => void
   setTier: (tier: string) => void
 }
@@ -40,19 +38,14 @@ function decodeJwt(token: string): { sub?: string; exp?: number } | null {
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null)
-  const [apiKey, setApiKeyState] = useState<string | null>(null)
   const [user, setUser] = useState<AuthUser | null>(null)
   const [tier, setTierState] = useState<string>('FREE')
   const [isReady, setIsReady] = useState(false)
 
-  const login = (newToken: string, newApiKey?: string) => {
+  const login = (newToken: string) => {
     const payload = decodeJwt(newToken)
     const email = payload?.sub
     setToken(newToken)
-    if (newApiKey) {
-      setApiKeyState(newApiKey)
-      localStorage.setItem(API_KEY_KEY, newApiKey)
-    }
     if (email) {
       setUser({ email })
       localStorage.setItem(EMAIL_KEY, email)
@@ -62,11 +55,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = () => {
     setToken(null)
-    setApiKeyState(null)
     setUser(null)
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(EMAIL_KEY)
-    localStorage.removeItem(API_KEY_KEY)
   }
 
   const setTier = (nextTier: string) => {
@@ -78,10 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const storedToken = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
     const storedEmail = typeof window !== 'undefined' ? localStorage.getItem(EMAIL_KEY) : null
     const storedTier = typeof window !== 'undefined' ? localStorage.getItem(TIER_KEY) : null
-    const storedApiKey = typeof window !== 'undefined' ? localStorage.getItem(API_KEY_KEY) : null
-
     if (storedTier) setTierState(storedTier)
-    if (storedApiKey) setApiKeyState(storedApiKey)
 
     if (storedToken) {
       const payload = decodeJwt(storedToken)
@@ -123,14 +111,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<AuthContextValue>(() => ({
     user,
     token,
-    apiKey,
     tier,
     isAuthenticated: Boolean(token),
     isReady,
     login,
     logout,
     setTier,
-  }), [user, token, apiKey, tier, isReady])
+  }), [user, token, tier, isReady])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

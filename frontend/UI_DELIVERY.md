@@ -16,7 +16,7 @@ Key features delivered
 
 QA steps
 1. Run frontend locally: `cd frontend && npm install && npm run dev`
-2. Start backend on `localhost:8001` and set `localStorage.ZEUSONIC_API_KEY` with a demo key.
+2. Start backend on `localhost:8001` and login to obtain a JWT.
 3. Visit `/dashboard` and confirm:
    - Left tool rail is visible on desktop
    - Center canvas shows upload panel and timeline

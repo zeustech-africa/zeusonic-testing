@@ -2,14 +2,15 @@
 
 import React, { useEffect } from 'react'
 import { config } from '../lib/config'
+import { useAuth } from './auth/AuthProvider'
 
 function SubscriptionAuraInner({ targetId = 'center-canvas' }: { targetId?: string }) {
+  const { token } = useAuth()
   useEffect(() => {
     let mounted = true
-    const key = typeof window !== 'undefined' ? window.localStorage.getItem('ZEUSONIC_API_KEY') : null
-    if (!key) return
+    if (!token) return
 
-    fetch(`${config.apiUrl}/api/v1/subscription`, { headers: { 'X-API-Key': key } })
+    fetch(`${config.apiUrl}/api/v1/billing/status`, { headers: { Authorization: `Bearer ${token}` } })
       .then((r) => r.json())
       .then((d) => {
         if (!mounted) return
@@ -26,7 +27,7 @@ function SubscriptionAuraInner({ targetId = 'center-canvas' }: { targetId?: stri
       .catch(() => {})
 
     return () => { mounted = false }
-  }, [targetId])
+  }, [targetId, token])
 
   return null
 }

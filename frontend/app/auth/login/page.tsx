@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Container from '../../../components/ui/Container'
 import Card from '../../../components/ui/Card'
@@ -15,16 +15,39 @@ export default function LoginPage() {
   const router = useRouter()
   const params = useSearchParams()
   const next = params.get('next') || '/dashboard'
+  const emailParam = params.get('email') || ''
   const { login } = useAuth()
 
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null)
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (emailParam && !email) {
+      setEmail(emailParam)
+    }
+  }, [emailParam, email])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    setPendingEmail(localStorage.getItem('zeusonic.pendingVerificationEmail'))
+    setVerifiedEmail(localStorage.getItem('zeusonic.verifiedEmail'))
+  }, [email])
+
+  const isPendingVerification = !!email && pendingEmail === email && verifiedEmail !== email
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+
+    if (isPendingVerification) {
+      setError('Please verify your email before logging in.')
+      return
+    }
+
     setLoading(true)
 
     try {
@@ -40,6 +63,9 @@ export default function LoginPage() {
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
         console.warn('[AUTH][LOGIN] Non-OK response:', res.status, data)
+        if (res.status === 401) {
+          throw new Error('Invalid credentials — this usually means the password doesn’t match the one you registered with.')
+        }
         throw new Error(data?.detail || 'Invalid credentials')
       }
 
@@ -71,10 +97,28 @@ export default function LoginPage() {
             </div>
             <div>
               <label className="text-sm text-muted">Password</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Your password" required />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Your password"
+                required
+                disabled={loading || isPendingVerification}
+                autoComplete="new-password"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck={false}
+                inputMode="text"
+                name="password-no-autofill"
+                data-lpignore="true"
+              />
+              <p className="text-xs text-muted mt-1">Use the SAME password you registered with.</p>
             </div>
+            {isPendingVerification && (
+              <div className="text-amber-400 text-sm">Please verify your email before logging in.</div>
+            )}
             {error && <div className="text-rose-400 text-sm">{error}</div>}
-            <Button type="submit" variant="primary" className="w-full" disabled={loading}>
+            <Button type="submit" variant="primary" className="w-full" disabled={loading || isPendingVerification}>
               {loading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>

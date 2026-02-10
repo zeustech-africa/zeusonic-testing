@@ -255,6 +255,19 @@ def list_project_audio(
             "status": track.status,
             "created_at": track.created_at,
         }
+
+        stems = db.query(models.AudioStem).filter(
+            models.AudioStem.source_track_id == track.id,
+            models.AudioStem.project_id == project_id,
+        ).order_by(models.AudioStem.created_at.asc()).all()
+        if stems:
+            track_data["stems"] = [
+                {
+                    "id": stem.id,
+                    "stem_type": stem.stem_type,
+                }
+                for stem in stems
+            ]
         
         # Include analysis if available
         analysis = db.query(models.AudioAnalysis).filter(
@@ -505,5 +518,33 @@ def download_processed_audio(
     return FileResponse(
         path=str(file_path),
         filename=f"{track.original_filename}_{process_type}{file_path.suffix}",
+        media_type="application/octet-stream"
+    )
+
+
+@router.get("/audio/{track_id}/source/download")
+def download_source_audio(
+    track_id: int,
+    user: models.User = Depends(get_current_verified_user),
+    db: Session = Depends(get_db)
+):
+    """Download the original source audio for a track (JWT-only)."""
+
+    track = db.query(models.AudioTrack).filter(
+        models.AudioTrack.id == track_id,
+        models.AudioTrack.user_id == user.id
+    ).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    audio_dir = _get_project_audio_dir(track.project_id)
+    file_path = audio_dir / track.filename
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found on disk")
+
+    return FileResponse(
+        path=str(file_path),
+        filename=track.original_filename,
         media_type="application/octet-stream"
     )

@@ -7,6 +7,7 @@ from backend.api.v1.audio import router as audio_router
 from backend.api.v1.projects import router as projects_router
 from backend.api.v1.audio_tracks import router as audio_tracks_router
 from backend.api.v1.audio_transform import router as audio_transform_router
+from backend.ai.ai_commands import router as ai_commands_router
 from backend.api.v1.billing import router as billing_router
 from backend.api.auth import router as auth_router
 
@@ -17,48 +18,7 @@ from backend.core.config import settings
 app = FastAPI(
     title="Zeusonic API",
     version="0.1.0",
-    openapi_tags=[
-        {"name": "health", "description": "Health check endpoints"},
-        {"name": "meta", "description": "Metadata and subscription endpoints"},
-        {"name": "audio", "description": "Audio processing endpoints"},
-        {"name": "projects", "description": "Project management endpoints"},
-        {"name": "audio-tracks", "description": "Audio track management endpoints"},
-        {"name": "audio-transform", "description": "Audio transformation endpoints"},
-        {"name": "billing", "description": "Billing and subscription endpoints"},
-        {"name": "auth", "description": "Authentication endpoints"},
-    ],
 )
-
-# Configure OpenAPI security scheme for X-API-Key authentication
-from fastapi.openapi.utils import get_openapi
-
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-    openapi_schema = get_openapi(
-        title="Zeusonic API",
-        version="0.1.0",
-        description="Audio processing and transformation API",
-        routes=app.routes,
-    )
-    openapi_schema["components"]["securitySchemes"] = {
-        "ApiKeyAuth": {
-            "type": "apiKey",
-            "in": "header",
-            "name": "X-API-Key",
-            "description": "API key for authentication. Contact support to obtain your API key."
-        },
-        "BearerAuth": {
-            "type": "http",
-            "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "JWT token for user authentication"
-        }
-    }
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-
-app.openapi = custom_openapi
 
 # Install calm, non-leaky exception handlers so production responses never include stack traces
 from fastapi import Request
@@ -89,41 +49,54 @@ async def internal_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
     return JSONResponse(status_code=500, content={"detail": "An internal server error occurred. Please try again later."})
 
-# CORS - enable for development and testing environments
-if settings.app_env in ["development", "testing"]:
-    from fastapi.middleware.cors import CORSMiddleware
+# CORS - always enabled with configurable origins (safe defaults)
+import os
+from fastapi.middleware.cors import CORSMiddleware
 
-    # Use configured allowed origins or fallback to localhost
-    allowed_origins = settings.allowed_origins or ["http://localhost:3000", "http://127.0.0.1:3000"]
-    
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+# Read allowed origins from settings (Pydantic-validated)
+allowed_origins = settings.allowed_origins
+allowed_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", "").strip() or None
+
+# Always allow official Vercel frontends
+vercel_origins = [
+    "https://zeusonic-t.vercel.app",
+    "https://zeusonic.vercel.app",
+]
+for origin in vercel_origins:
+    if origin not in allowed_origins:
+        allowed_origins.append(origin)
+
+# Development convenience: keep localhost defaults if no env origins provided
+if settings.app_env == "development" and not allowed_origins and not allowed_origin_regex:
+    allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=allowed_origins,
+    allow_origin_regex=allowed_origin_regex,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")
 async def startup_event():
     """Ensure DB tables exist, validate JWT_SECRET, create a demo API key on startup, and start the job worker (dev only)."""
     
-    # Initialize logger at the top to avoid UnboundLocalError
-    from backend.core.logging import get_logger
-    logger = get_logger(__name__)
-    
     # CRITICAL: Enforce JWT_SECRET is configured (fail fast if missing)
     if not settings.jwt_secret:
-        logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
+        from backend.core.logging import get_logger as _get_logger
+        startup_logger = _get_logger(__name__)
+        startup_logger.critical("❌ FATAL: JWT_SECRET is not configured. Set JWT_SECRET in .env or environment variables.")
         raise RuntimeError("JWT_SECRET is required but not configured. Cannot start application.")
     
-    # Log authentication configuration (non-sensitive)
-    logger.info("✅ Application startup: JWT_SECRET configured")
-    if settings.zeusonic_api_key:
-        logger.info("✅ Application startup: ZEUSONIC_API_KEY configured (master key enabled)")
-    else:
-        logger.info("ℹ️  Application startup: ZEUSONIC_API_KEY not set (database-only authentication)")
+    # Log JWT algorithm and token expiry for verification
+    from backend.core.logging import get_logger as _get_logger
+    startup_logger = _get_logger(__name__)
+    startup_logger.info("✅ JWT_SECRET: configured (length=%s)", len(settings.jwt_secret))
+    startup_logger.info("✅ JWT_ALGORITHM: %s", settings.jwt_algorithm)
+    startup_logger.info("✅ JWT_ACCESS_TOKEN_MINUTES: %s minutes", settings.jwt_access_token_minutes)
     
     create_tables()
 
@@ -134,20 +107,26 @@ async def startup_event():
         demo = create_api_key()
     # Development-only: log API key and write it to disk for convenience when running locally
     if settings.app_env == "development":
-        logger.info("✅ Application startup: initializing database and demo API key")
-        logger.info("Demo API key (development only): %s owner=%s", demo.key, demo.owner)
+        from backend.core.logging import get_logger
+
+        startup_logger = get_logger(__name__)
+        startup_logger.info("✅ Application startup: JWT_SECRET configured")
+        startup_logger.info("✅ Application startup: initializing database and demo API key")
+        startup_logger.info("Demo API key (development only): %s owner=%s", demo.key, demo.owner)
         try:
             # Also write the key to the configured api_key_path for convenience in local development
             api_key_path = Path(settings.api_key_path)
             api_key_path.parent.mkdir(parents=True, exist_ok=True)
             api_key_path.write_text(demo.key)
-            logger.info("Wrote demo API key to %s", str(api_key_path))
+            startup_logger.info("Wrote demo API key to %s", str(api_key_path))
         except Exception as exc:
-            logger.warning("Failed to write demo API key file: %s", exc)
+            startup_logger.warning("Failed to write demo API key file: %s", exc)
     else:
         # In non-development environments we still log startup but never print or persist API keys
-        logger.info("✅ Application startup: JWT_SECRET configured")
-        logger.info("✅ Application startup: initializing database")
+        from backend.core.logging import get_logger as _get_logger
+
+        _get_logger(__name__).info("✅ Application startup: JWT_SECRET configured")
+        _get_logger(__name__).info("✅ Application startup: initializing database")
 
     # Start background job worker (non-blocking)
     try:
@@ -166,6 +145,7 @@ app.include_router(audio_router, prefix="/api/v1")
 app.include_router(projects_router, prefix="/api/v1")
 app.include_router(audio_tracks_router, prefix="/api/v1")
 app.include_router(audio_transform_router, prefix="/api/v1")
+app.include_router(ai_commands_router, prefix="/api/v1")
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(auth_router)
 
@@ -174,6 +154,12 @@ app.include_router(auth_router)
 async def root():
     """Root endpoint used for quick checks."""
     return {"message": "Zeusonic API"}
+
+
+@app.get("/health", include_in_schema=False)
+async def root_health():
+    """Root health alias for quick checks."""
+    return {"status": "ok"}
 
 
 @app.on_event("shutdown")

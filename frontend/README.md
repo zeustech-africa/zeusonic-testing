@@ -16,7 +16,7 @@ Notes
   - `studio-grid`, `left-rail`, `center-canvas`, `right-panel` — UDIO-inspired layout helpers. Mobile collapses to a single column with `mobile-bottom-nav` and a floating `fab` primary action.
 - Tailwind theme values are mapped from the tokens so components can use `bg-accent`, `text-muted`, `shadow-soft`, etc.
 - The logo assets are in `public/assets/branding` and are used in the header.
-- This scaffold supports a live upload integration for the `AudioUploadPanel` (used on `/generate` and `/dashboard`). For local dev, the component reads a development API key from `localStorage.ZEUSONIC_API_KEY` if present. You can obtain the demo key from the backend by running the server and inspecting the console or the `.demo_api_key` file created by the backend during startup. See `./docs/AUDIO_UPLOAD_PANEL.md` and `./docs/AUDIO_UPLOAD_PANEL_LIVE.md` for the AudioUploadPanel visual states, UI contract, and live integration details.
+- This scaffold supports a live upload integration for the `AudioUploadPanel` (used on `/generate` and `/dashboard`). For local dev, authenticate via the standard login flow to obtain a JWT. See `./docs/AUDIO_UPLOAD_PANEL.md` and `./docs/AUDIO_UPLOAD_PANEL_LIVE.md` for the AudioUploadPanel visual states, UI contract, and live integration details.
 
 Storybook
 - Storybook is configured for this project. To run it locally:
