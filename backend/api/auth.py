@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException, status, Depends, Request
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from sqlalchemy.orm import Session
+from sqlalchemy import func
+from sqlalchemy.exc import MultipleResultsFound
 
 from backend.core.auth import hash_password, verify_password, create_access_token
 from backend.core.config import settings
@@ -372,8 +374,12 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
     
     # ======= USER FETCH =======
     try:
-        user = db.query(models.User).filter(models.User.email == email).first()
+        matching_rows = db.query(models.User).filter(func.lower(models.User.email) == email).count()
+        user = db.query(models.User).filter(func.lower(models.User.email) == email).one_or_none()
         logger.info("[AUTH][LOGIN] User query completed (email=%s, found=%s)", email, bool(user))
+    except MultipleResultsFound:
+        logger.critical("[AUTH][LOGIN] Account integrity error: duplicate users for email=%s", email)
+        raise HTTPException(status_code=500, detail="Account integrity error")
     except Exception as e:
         logger.exception("[AUTH][LOGIN] Database error during user fetch for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Database error")
@@ -383,6 +389,14 @@ def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     logger.info("[AUTH][LOGIN] User found (id=%s, verified=%s)", user.id, user.is_verified)
+    logger.info(
+        "[AUTH][LOGIN][FORENSICS] id=%s email=%s verified=%s hash_prefix=%s match_rows=%s",
+        user.id,
+        email,
+        user.is_verified,
+        (user.password_hash[:8] if user.password_hash else "none"),
+        matching_rows,
+    )
 
     # ======= VALIDATE PASSWORD HASH EXISTS =======
     if not user.password_hash:
