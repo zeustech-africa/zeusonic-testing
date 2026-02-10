@@ -17,7 +17,7 @@ import { useAuth } from './auth/AuthProvider'
 import { config } from '../lib/config'
 
 export default function AppLayout({ children, title }: { children: React.ReactNode; title?: string }) {
-  const { token, tier, isAuthenticated } = useAuth()
+  const { token, tier, isAuthenticated, logout } = useAuth()
   const [projectCount, setProjectCount] = useState<number | null>(null)
   const [billingStatus, setBillingStatus] = useState<{ tier: string; subscription_status?: string | null; current_period_end?: string | null; entitlements?: Record<string, any> } | null>(null)
 
@@ -34,7 +34,13 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
+      .then((r) => {
+        if (r.status === 401) {
+          logout()
+          return Promise.reject(r)
+        }
+        return r.ok ? r.json() : Promise.reject(r)
+      })
       .then((data) => {
         if (!mounted) return
         const count = Array.isArray(data?.projects) ? data.projects.length : 0
@@ -43,7 +49,7 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
       .catch(() => { if (mounted) setProjectCount(null) })
 
     return () => { mounted = false; controller.abort() }
-  }, [isAuthenticated, token])
+  }, [isAuthenticated, token, logout])
 
   useEffect(() => {
     if (!isAuthenticated || !token) {
@@ -58,12 +64,18 @@ export default function AppLayout({ children, title }: { children: React.ReactNo
       headers: { Authorization: `Bearer ${token}` },
       signal: controller.signal,
     })
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
+      .then((r) => {
+        if (r.status === 401) {
+          logout()
+          return Promise.reject(r)
+        }
+        return r.ok ? r.json() : Promise.reject(r)
+      })
       .then((data) => { if (mounted) setBillingStatus(data) })
       .catch(() => { if (mounted) setBillingStatus(null) })
 
     return () => { mounted = false; controller.abort() }
-  }, [isAuthenticated, token])
+  }, [isAuthenticated, token, logout])
 
   const projectLimit = useMemo(() => {
     if (!isAuthenticated) return null

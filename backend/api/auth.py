@@ -1,3 +1,5 @@
+# AUTH CLOSED — DO NOT MODIFY WITHOUT SECURITY REVIEW
+
 from datetime import datetime, timedelta
 import hashlib
 import secrets

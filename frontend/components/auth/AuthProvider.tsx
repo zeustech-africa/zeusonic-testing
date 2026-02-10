@@ -45,6 +45,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [tier, setTierState] = useState<string>('FREE')
   const [isReady, setIsReady] = useState(false)
 
+  const login = (newToken: string, newApiKey?: string) => {
+    const payload = decodeJwt(newToken)
+    const email = payload?.sub
+    setToken(newToken)
+    if (newApiKey) {
+      setApiKeyState(newApiKey)
+      localStorage.setItem(API_KEY_KEY, newApiKey)
+    }
+    if (email) {
+      setUser({ email })
+      localStorage.setItem(EMAIL_KEY, email)
+    }
+    localStorage.setItem(TOKEN_KEY, newToken)
+  }
+
+  const logout = () => {
+    setToken(null)
+    setApiKeyState(null)
+    setUser(null)
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(EMAIL_KEY)
+    localStorage.removeItem(API_KEY_KEY)
+  }
+
+  const setTier = (nextTier: string) => {
+    setTierState(nextTier)
+    localStorage.setItem(TIER_KEY, nextTier)
+  }
+
   useEffect(() => {
     const storedToken = typeof window !== 'undefined' ? localStorage.getItem(TOKEN_KEY) : null
     const storedEmail = typeof window !== 'undefined' ? localStorage.getItem(EMAIL_KEY) : null
@@ -76,7 +105,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     fetch(`${config.apiUrl}/api/v1/billing/status`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => r.ok ? r.json() : Promise.reject(r))
+      .then((r) => {
+        if (r.status === 401) {
+          logout()
+          return Promise.reject(r)
+        }
+        return r.ok ? r.json() : Promise.reject(r)
+      })
       .then((data) => {
         const nextTier = data?.plan_code || data?.tier || 'FREE'
         setTierState(nextTier)
@@ -84,35 +119,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
       .catch(() => {})
   }, [token])
-
-  const login = (newToken: string, newApiKey?: string) => {
-    const payload = decodeJwt(newToken)
-    const email = payload?.sub
-    setToken(newToken)
-    if (newApiKey) {
-      setApiKeyState(newApiKey)
-      localStorage.setItem(API_KEY_KEY, newApiKey)
-    }
-    if (email) {
-      setUser({ email })
-      localStorage.setItem(EMAIL_KEY, email)
-    }
-    localStorage.setItem(TOKEN_KEY, newToken)
-  }
-
-  const logout = () => {
-    setToken(null)
-    setApiKeyState(null)
-    setUser(null)
-    localStorage.removeItem(TOKEN_KEY)
-    localStorage.removeItem(EMAIL_KEY)
-    localStorage.removeItem(API_KEY_KEY)
-  }
-
-  const setTier = (nextTier: string) => {
-    setTierState(nextTier)
-    localStorage.setItem(TIER_KEY, nextTier)
-  }
 
   const value = useMemo<AuthContextValue>(() => ({
     user,
