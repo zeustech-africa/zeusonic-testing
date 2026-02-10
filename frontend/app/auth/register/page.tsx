@@ -12,10 +12,12 @@ import { config } from '../../../lib/config'
 
 export default function RegisterPage() {
   const router = useRouter()
+  const isDev = config.authMode === 'DEV'
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -34,7 +36,16 @@ export default function RegisterPage() {
         throw new Error(data?.detail || 'Unable to register')
       }
 
-      router.push(`/auth/verify?email=${encodeURIComponent(email)}`)
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zeusonic.pendingVerificationEmail', email)
+        localStorage.removeItem('zeusonic.verifiedEmail')
+      }
+      setSubmitted(true)
+      if (isDev) {
+        router.push(`/auth/login?email=${encodeURIComponent(email)}`)
+      } else {
+        router.push(`/auth/verify?email=${encodeURIComponent(email)}`)
+      }
     } catch (err: any) {
       setError(err.message || 'Registration failed')
     } finally {
@@ -48,7 +59,9 @@ export default function RegisterPage() {
         <Card>
           <div className="mb-4">
             <Heading level={2}>Create your account</Heading>
-            <p className="text-muted text-sm">Join Zeusonic and verify your email to continue.</p>
+            <p className="text-muted text-sm">
+              {isDev ? 'Account created instantly (dev mode).' : 'Join Zeusonic and verify your email to continue.'}
+            </p>
           </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
@@ -57,7 +70,14 @@ export default function RegisterPage() {
             </div>
             <div>
               <label className="text-sm text-muted">Password</label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Minimum 8 characters" required />
+              <Input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Minimum 8 characters"
+                required
+                disabled={loading || submitted}
+              />
             </div>
             {error && <div className="text-rose-400 text-sm">{error}</div>}
             <Button type="submit" variant="primary" className="w-full" disabled={loading}>

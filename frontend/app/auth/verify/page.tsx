@@ -14,11 +14,30 @@ export default function VerifyPage() {
   const router = useRouter()
   const params = useSearchParams()
   const initialEmail = params.get('email') || ''
+  const isDev = config.authMode === 'DEV'
 
   const [email, setEmail] = useState(initialEmail)
   const [code, setCode] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+
+  if (isDev) {
+    return (
+      <Container>
+        <div className="max-w-md mx-auto">
+          <Card>
+            <div className="mb-4">
+              <Heading level={2}>OTP disabled</Heading>
+              <p className="text-muted text-sm">OTP verification is disabled in dev mode.</p>
+            </div>
+            <Button type="button" variant="primary" className="w-full" onClick={() => router.push(`/auth/login?email=${encodeURIComponent(initialEmail)}`)}>
+              Continue to login
+            </Button>
+          </Card>
+        </div>
+      </Container>
+    )
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -37,7 +56,15 @@ export default function VerifyPage() {
         throw new Error(data?.detail || 'Verification failed')
       }
 
-      router.push('/auth/login')
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('zeusonic.verifiedEmail', email)
+        const pendingEmail = localStorage.getItem('zeusonic.pendingVerificationEmail')
+        if (pendingEmail === email) {
+          localStorage.removeItem('zeusonic.pendingVerificationEmail')
+        }
+      }
+
+      router.push(`/auth/login?email=${encodeURIComponent(email)}`)
     } catch (err: any) {
       setError(err.message || 'Verification failed')
     } finally {

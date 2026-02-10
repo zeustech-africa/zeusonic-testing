@@ -1,10 +1,11 @@
 # AUTH CLOSED — DO NOT MODIFY WITHOUT SECURITY REVIEW
+# TEMP DEV AUTH MODE — MUST BE REMOVED BEFORE PUBLIC LAUNCH
 
 from datetime import datetime, timedelta
 import hashlib
 import secrets
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, status, Depends, Request, Response
 from pydantic import BaseModel, EmailStr, Field
 from typing import Optional
 from sqlalchemy.orm import Session
@@ -80,7 +81,7 @@ def _validate_pending_otp(pending: models.PendingRegistration, provided_otp: str
 
 
 @router.post("/register", response_model=RegisterResponse, status_code=202)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)):
+def register(payload: RegisterRequest, response: Response, db: Session = Depends(get_db)):
     """
     Stage 1: Register a new account (pending OTP verification).
     
@@ -141,6 +142,30 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         logger.error("[AUTH][REGISTER] Error hashing password for %s: %s", email, e)
         raise HTTPException(status_code=500, detail="Failed to hash password")
 
+    # DEV mode: create user immediately, skip OTP
+    if settings.auth_mode.upper() == "DEV":
+        try:
+            user = models.User(
+                email=email,
+                password_hash=password_hash,
+                is_verified=True,
+                tier="FREE",
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            logger.info("[AUTH][REGISTER][DEV] User created and verified: %s (id=%s)", email, user.id)
+        except Exception as e:
+            db.rollback()
+            logger.error("[AUTH][REGISTER][DEV] Error creating user for %s: %s", email, e)
+            raise HTTPException(status_code=500, detail="Failed to create user account")
+
+        response.status_code = status.HTTP_201_CREATED
+        return {
+            "message": "Account created instantly (dev mode)",
+            "registration_id": str(user.id),
+        }
+
     # Generate OTP
     try:
         otp = _generate_otp()
@@ -184,6 +209,8 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
 @router.post("/verify-otp")
 def verify_otp(payload: OtpVerifyRequest, request: Request, db: Session = Depends(get_db)):
+    if settings.auth_mode.upper() == "DEV":
+        raise HTTPException(status_code=410, detail="OTP disabled in DEV mode")
     return _verify_otp_impl(payload, request, db)
 
 

@@ -4,6 +4,7 @@
  */
 
 const rawApiUrl = process.env.NEXT_PUBLIC_API_URL;
+const rawAuthMode = process.env.NEXT_PUBLIC_AUTH_MODE;
 
 const normalizeApiUrl = (value?: string) => {
   if (!value) return 'https://zeusonic-api.onrender.com';
@@ -28,4 +29,5 @@ const normalizeApiUrl = (value?: string) => {
 
 export const config = {
   apiUrl: normalizeApiUrl(rawApiUrl),
+  authMode: (rawAuthMode || 'PROD').toUpperCase(),
 } as const;
