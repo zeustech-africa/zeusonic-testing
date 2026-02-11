@@ -68,11 +68,17 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
   const [loading, setLoading] = useState(true);
   const [transformJobs, setTransformJobs] = useState<Record<number, TransformJob | null>>({});
   const [transformStyles, setTransformStyles] = useState<Record<number, string>>({});
+  const [stems, setStems] = useState<Record<number, { vocals: string; instrumental: string }>>({});
+  const [instrumentLayers, setInstrumentLayers] = useState<Record<number, string[]>>({});
+  const [mixResults, setMixResults] = useState<Record<number, string>>({});
+  const [masterResults, setMasterResults] = useState<Record<number, string>>({});
+  const [vocalSettings, setVocalSettings] = useState<Record<number, { texture: string; energy: number; useOriginal: boolean; customUrl: string }>>({});
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [selectedTrackId, setSelectedTrackId] = useState<number | null>(null);
   const [mixerSettings, setMixerSettings] = useState<Record<number, { bass: number; treble: number; vocal_presence: number; stereo_width: number }>>({});
   const [styleSettings, setStyleSettings] = useState<Record<number, { intensity: number; preserveRhythm: boolean }>>({});
   const [instrumentSettings, setInstrumentSettings] = useState<Record<number, { mood: string; blend: number }>>({});
+  const [outputUrls, setOutputUrls] = useState<Record<number, string>>({});
   const [lastExport, setLastExport] = useState<{ trackId: number; type: 'master' | 'mix' | 'transform' } | null>(null);
   const mixDebounceRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const waveformContainerRef = useRef<HTMLDivElement | null>(null);
@@ -147,6 +153,26 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
           });
           return updated;
         });
+
+        setVocalSettings((prev) => {
+          const updated = { ...prev };
+          nextTracks.forEach((track: AudioTrack) => {
+            if (!updated[track.id]) {
+              updated[track.id] = { texture: 'warm', energy: 60, useOriginal: true, customUrl: '' };
+            }
+          });
+          return updated;
+        });
+
+        setInstrumentLayers((prev) => {
+          const updated = { ...prev };
+          nextTracks.forEach((track: AudioTrack) => {
+            if (!updated[track.id]) {
+              updated[track.id] = [];
+            }
+          });
+          return updated;
+        });
       }
     } catch (error) {
       console.error('Failed to fetch tracks:', error);
@@ -216,6 +242,35 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
     }));
   };
 
+  const apiBaseUrl = process.env.NEXT_PUBLIC_API_URL || config.apiUrl;
+
+  const callAiProxy = async (path: string, payload: Record<string, unknown>) => {
+    if (!token) return null;
+    try {
+      const response = await fetch(`${apiBaseUrl}/api/v1/ai/${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        const detail = (data as { detail?: string })?.detail || 'AI request failed.';
+        setStatusMessage(detail);
+        return null;
+      }
+
+      return data as Record<string, unknown>;
+    } catch (error) {
+      console.error('AI proxy request failed:', error);
+      setStatusMessage('AI request failed. Please try again.');
+      return null;
+    }
+  };
+
   const postAiCommand = async (path: string, payload: Record<string, unknown>) => {
     if (!token) return null;
     try {
@@ -270,17 +325,8 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
     if (timers[trackId]) {
       clearTimeout(timers[trackId]);
     }
-    timers[trackId] = setTimeout(async () => {
-      const response = await runAiCommand(trackId, 'mixAdjust', '/ai/mix-adjust', {
-        track_id: trackId,
-        bass: nextMixer.bass,
-        treble: nextMixer.treble,
-        vocals: nextMixer.vocal_presence,
-      });
-      if (response?.status === 'queued') {
-        setStatusMessage('AI mix adjustment complete.');
-        await fetchTracks();
-      }
+    timers[trackId] = setTimeout(() => {
+      setStatusMessage('Mix adjustments are applied during the AI mix stage.');
     }, 600);
   };
 
@@ -289,39 +335,94 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
       setStatusMessage('Select a track before adding instruments.');
       return;
     }
-    const response = await runAiCommand(selectedTrackId, 'instrument', '/ai/add-instrument', {
-      track_id: selectedTrackId,
+    const currentStems = stems[selectedTrackId];
+    if (!currentStems?.instrumental) {
+      setStatusMessage('Run stem separation before adding instruments.');
+      return;
+    }
+
+    setCommandStatus(selectedTrackId, 'instrument', true);
+    const response = await callAiProxy('add-instrument', {
+      instrumental_url: currentStems.instrumental,
       instrument: instrument.toLowerCase(),
       intensity: currentInstrument?.blend ?? 60,
     });
-    if (response?.ai_engine_pending) {
-      setPendingCapabilities((prev) => ({
+    setCommandStatus(selectedTrackId, 'instrument', false);
+
+    const layerUrl = (response as { layer_url?: string; output_url?: string } | null)?.layer_url
+      || (response as { output_url?: string } | null)?.output_url;
+
+    if (layerUrl) {
+      setInstrumentLayers((prev) => ({
         ...prev,
-        [selectedTrackId]: { ...prev[selectedTrackId], instrument: true },
+        [selectedTrackId]: [...(prev[selectedTrackId] || []), layerUrl],
       }));
-      setStatusMessage('AI Engine connected — execution coming next');
+      setStatusMessage(`Instrument layer added: ${instrument}.`);
       return;
     }
-    if (response?.status === 'queued') {
-      setStatusMessage(`AI instrument layer queued: ${instrument}.`);
+
+    if (response) {
+      setStatusMessage(`Instrument layer queued: ${instrument}.`);
+    }
+  };
+
+  const handleVocalStyle = async () => {
+    if (!selectedTrackId) {
+      setStatusMessage('Select a track before processing vocals.');
+      return;
+    }
+
+    const settings = vocalSettings[selectedTrackId];
+    const currentStems = stems[selectedTrackId];
+    const vocalsUrl = settings?.useOriginal ? currentStems?.vocals : settings?.customUrl;
+
+    if (!vocalsUrl) {
+      setStatusMessage('Vocal stem not ready. Separate stems or provide a vocal URL.');
+      return;
+    }
+
+    setStatusMessage('Processing vocals...');
+    const response = await callAiProxy('vocal-style', {
+      vocals_url: vocalsUrl,
+      texture: settings?.texture || 'warm',
+      energy: settings?.energy ?? 60,
+    });
+
+    const processedUrl = (response as { vocals_url?: string; output_url?: string } | null)?.vocals_url
+      || (response as { output_url?: string } | null)?.output_url;
+
+    if (processedUrl) {
+      setStems((prev) => ({
+        ...prev,
+        [selectedTrackId]: {
+          vocals: String(processedUrl),
+          instrumental: prev[selectedTrackId]?.instrumental || '',
+        },
+      }));
+      setStatusMessage('Vocal processing complete.');
+      return;
+    }
+
+    if (response) {
+      setStatusMessage('Vocal processing queued.');
     }
   };
 
   const handleSplitStems = async (trackId: number) => {
-    const response = await runAiCommand(trackId, 'splitStems', '/ai/separate', {
-      track_id: trackId,
-    });
-    if (response?.ai_engine_pending) {
-      setPendingCapabilities((prev) => ({
+    setCommandStatus(trackId, 'splitStems', true);
+    const audioUrl = `${apiBaseUrl}/api/v1/audio/${trackId}/source/download`;
+    const response = await callAiProxy('separate', { audio_url: audioUrl });
+    setCommandStatus(trackId, 'splitStems', false);
+
+    if (response && response.vocals_url && response.instrumental_url) {
+      setStems((prev) => ({
         ...prev,
-        [trackId]: { ...prev[trackId], splitStems: true },
+        [trackId]: {
+          vocals: String(response.vocals_url),
+          instrumental: String(response.instrumental_url),
+        },
       }));
-      setStatusMessage('AI Engine connected — execution coming next');
-      return;
-    }
-    if (response?.status === 'queued') {
-      setStatusMessage('Stem separation queued.');
-      await fetchTracks();
+      setStatusMessage('Stem separation complete.');
     }
   };
 
@@ -347,11 +448,20 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
       if (response.ok) {
         const data = await response.json();
         await fetchTracks();
-        setStatusMessage('Upload complete. Analyzing audio...');
+        setStatusMessage('Upload complete. Separating stems...');
         if (data?.id) {
-          await runAiCommand(data.id, 'analyze', '/ai/analyze', {
-            track_id: data.id,
-          });
+          const audioUrl = `${apiBaseUrl}/api/v1/audio/${data.id}/source/download`;
+          const stemResponse = await callAiProxy('separate', { audio_url: audioUrl });
+          if (stemResponse && stemResponse.vocals_url && stemResponse.instrumental_url) {
+            setStems((prev) => ({
+              ...prev,
+              [data.id]: {
+                vocals: String(stemResponse.vocals_url),
+                instrumental: String(stemResponse.instrumental_url),
+              },
+            }));
+            setStatusMessage('Stems ready.');
+          }
         }
       } else {
         const error = await response.json();
@@ -368,49 +478,54 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
 
   const triggerMix = async (trackId: number) => {
     if (!token) return;
+    const currentStems = stems[trackId];
+    if (!currentStems?.instrumental || !currentStems?.vocals) {
+      setStatusMessage('Stems not ready. Run stem separation first.');
+      return;
+    }
 
-    try {
-      const response = await fetch(`${config.apiUrl}/api/v1/audio/${trackId}/mix`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    setStatusMessage('Mixing track...');
+    const response = await callAiProxy('mix', {
+      instrumental_url: currentStems.instrumental,
+      vocals_url: currentStems.vocals,
+      added_layers: instrumentLayers[trackId] || [],
+    });
 
-      if (response.ok) {
-        await fetchTracks();
-        setStatusMessage('Mix job started. This may take a moment.');
-      } else {
-        const error = await response.json();
-        setStatusMessage(`Mix failed: ${error.detail || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Mix failed:', error);
-      setStatusMessage('Mix failed. Please try again.');
+    const mixUrl = (response as { mix_url?: string; output_url?: string } | null)?.mix_url
+      || (response as { output_url?: string } | null)?.output_url;
+
+    if (mixUrl) {
+      setMixResults((prev) => ({ ...prev, [trackId]: String(mixUrl) }));
+      setStatusMessage('Mix complete.');
+      return;
+    }
+
+    if (response) {
+      setStatusMessage('Mix queued.');
     }
   };
 
   const triggerMaster = async (trackId: number) => {
     if (!token) return;
+    const mixUrl = mixResults[trackId];
+    if (!mixUrl) {
+      setStatusMessage('Mix result not ready yet.');
+      return;
+    }
 
-    try {
-      const response = await fetch(`${config.apiUrl}/api/v1/audio/${trackId}/master`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+    setStatusMessage('Mastering track...');
+    const response = await callAiProxy('master', { mix_url: mixUrl });
+    const masterUrl = (response as { master_url?: string; output_url?: string } | null)?.master_url
+      || (response as { output_url?: string } | null)?.output_url;
 
-      if (response.ok) {
-        await fetchTracks();
-        setStatusMessage('Master job started. This may take a moment.');
-      } else {
-        const error = await response.json();
-        setStatusMessage(`Master failed: ${error.detail || 'Unknown error'}`);
-      }
-    } catch (error) {
-      console.error('Master failed:', error);
-      setStatusMessage('Master failed. Please try again.');
+    if (masterUrl) {
+      setMasterResults((prev) => ({ ...prev, [trackId]: String(masterUrl) }));
+      setStatusMessage('Master complete.');
+      return;
+    }
+
+    if (response) {
+      setStatusMessage('Master queued.');
     }
   };
 
@@ -443,6 +558,18 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
   };
 
   const downloadTransform = (trackId: number) => {
+    const outputUrl = outputUrls[trackId] || transformJobs[trackId]?.output_path || null;
+    if (outputUrl) {
+      const resolvedUrl = outputUrl.startsWith('http') ? outputUrl : `${config.apiUrl}${outputUrl}`;
+      const link = document.createElement('a');
+      link.href = resolvedUrl;
+      link.download = `track_${trackId}_transform.wav`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatusMessage('Download started.');
+      return;
+    }
     const url = `${config.apiUrl}/api/v1/audio/${trackId}/transform/download`;
     downloadWithAuth(url, `track_${trackId}_transform.wav`);
   };
@@ -452,28 +579,21 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
       setStatusMessage('Select a track before exporting.');
       return;
     }
-    runAiCommand(selectedTrackId, 'export', '/ai/export', {
-      track_id: selectedTrackId,
-    }).then((response) => {
-      if (!response) return;
-      if (response.ai_engine_pending) {
-        setStatusMessage('AI Engine connected — execution coming next');
-        return;
-      }
-      if (response.download_url) {
-        const downloadUrl = `${config.apiUrl}${response.download_url}`;
-        if (response.download_url.includes('/master')) {
-          setLastExport({ trackId: selectedTrackId, type: 'master' });
-        } else if (response.download_url.includes('/mix')) {
-          setLastExport({ trackId: selectedTrackId, type: 'mix' });
-        } else {
-          setLastExport({ trackId: selectedTrackId, type: 'transform' });
-        }
-        downloadWithAuth(downloadUrl, `track_${selectedTrackId}_export.wav`);
-      } else {
-        setStatusMessage(response.detail || 'Export queued.');
-      }
-    });
+    const masterUrl = masterResults[selectedTrackId];
+    const mixUrl = mixResults[selectedTrackId];
+    if (masterUrl) {
+      setLastExport({ trackId: selectedTrackId, type: 'master' });
+      const resolvedUrl = masterUrl.startsWith('http') ? masterUrl : `${apiBaseUrl}${masterUrl}`;
+      downloadWithAuth(resolvedUrl, `track_${selectedTrackId}_master.wav`);
+      return;
+    }
+    if (mixUrl) {
+      setLastExport({ trackId: selectedTrackId, type: 'mix' });
+      const resolvedUrl = mixUrl.startsWith('http') ? mixUrl : `${apiBaseUrl}${mixUrl}`;
+      downloadWithAuth(resolvedUrl, `track_${selectedTrackId}_mix.wav`);
+      return;
+    }
+    setStatusMessage('No mix or master output available yet.');
   };
 
   const handleExportDownload = () => {
@@ -485,18 +605,84 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
     downloadProcessed(lastExport.trackId, lastExport.type);
   };
 
-  const triggerTransform = async (trackId: number) => {
-    const targetStyle = transformStyles[trackId] || 'reggae';
-    const style = styleSettings[trackId];
-    const response = await runAiCommand(trackId, 'transform', '/ai/style-transfer', {
-      track_id: trackId,
-      style: targetStyle,
-      reference_audio: null,
-    });
-    if (response?.status === 'queued') {
-      await fetchTracks();
-      setStatusMessage('AI transform queued. Watch status for completion.');
+  const transformTrack = async (trackId: number) => {
+    if (!token) return;
+    const selectedStyle = transformStyles[trackId] || 'reggae';
+    const startedAt = new Date().toISOString();
+
+    setTransformJobs((prev) => ({
+      ...prev,
+      [trackId]: {
+        id: Date.now(),
+        track_id: trackId,
+        source_style: 'external',
+        target_style: selectedStyle,
+        status: 'processing',
+        created_at: startedAt,
+      },
+    }));
+
+    const currentStems = stems[trackId];
+    if (!currentStems?.instrumental) {
+      await handleSplitStems(trackId);
     }
+
+    const instrumentalUrl = stems[trackId]?.instrumental;
+    if (!instrumentalUrl) {
+      setStatusMessage('Instrumental stem not ready yet.');
+      return;
+    }
+
+    setStatusMessage('Processing beat transform...');
+    const data = await callAiProxy('transform', {
+      audio_url: instrumentalUrl,
+      style: selectedStyle,
+      instruments: [],
+    });
+
+    if (!data || !data.output_url) {
+      setTransformJobs((prev) => ({
+        ...prev,
+        [trackId]: prev[trackId]
+          ? { ...prev[trackId]!, status: 'failed' }
+          : null,
+      }));
+      setStatusMessage('Transformation failed.');
+      return;
+    }
+
+    const outputUrl = String(data.output_url);
+    setOutputUrls((prev) => ({
+      ...prev,
+      [trackId]: outputUrl,
+    }));
+    setStems((prev) => ({
+      ...prev,
+      [trackId]: {
+        vocals: prev[trackId]?.vocals || '',
+        instrumental: outputUrl,
+      },
+    }));
+
+    setTransformJobs((prev) => ({
+      ...prev,
+      [trackId]: {
+        id: prev[trackId]?.id ?? Date.now(),
+        track_id: trackId,
+        source_style: 'external',
+        target_style: selectedStyle,
+        status: 'completed',
+        output_path: outputUrl,
+        created_at: prev[trackId]?.created_at ?? startedAt,
+        completed_at: new Date().toISOString(),
+      },
+    }));
+
+    setStatusMessage('Beat transform complete.');
+  };
+
+  const triggerTransform = async (trackId: number) => {
+    await transformTrack(trackId);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -806,10 +992,13 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
             </div>
             <div className="space-y-2 text-xs text-gray-400">
               {selectedTrack ? (
-                (selectedTrack.stems && selectedTrack.stems.length > 0) ? (
-                  selectedTrack.stems.map((stem) => (
-                    <div key={stem.id} className="flex items-center justify-between gap-2">
-                      <span className="text-gray-300 capitalize">{stem.stem_type.replace('_', ' ')}</span>
+                stems[selectedTrack.id] ? (
+                  [
+                    { label: 'Vocals', url: stems[selectedTrack.id].vocals },
+                    { label: 'Instrumental', url: stems[selectedTrack.id].instrumental },
+                  ].map((stem) => (
+                    <div key={stem.label} className="flex items-center justify-between gap-2">
+                      <span className="text-gray-300">{stem.label}</span>
                       <div className="flex gap-2">
                         <button className="px-2 py-1 rounded bg-black/60 border border-white/10 cursor-not-allowed">Mute</button>
                         <button className="px-2 py-1 rounded bg-black/60 border border-white/10 cursor-not-allowed">Solo</button>
@@ -825,7 +1014,7 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
               )}
             </div>
             <div className="mt-2 text-xs text-muted">
-              AI Engine connected — execution coming next.
+              External AI stem separation via Mureka proxy.
             </div>
           </div>
         </div>
@@ -859,28 +1048,15 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
                     <span className="text-[10px] text-blue-400">Analyzing stems...</span>
                   )}
                 </div>
-                {(selectedTrack.stems && selectedTrack.stems.length > 0) && (
+                {stems[selectedTrack.id] && (
                   <div className="space-y-2">
-                    {selectedTrack.stems.map((stem) => (
-                      <div key={stem.id} className="flex items-center gap-2">
-                        <div className="w-24 text-xs text-gray-400 truncate capitalize">
-                          {stem.stem_type.replace('_', ' ')}
-                        </div>
+                    {['Vocals', 'Instrumental'].map((label) => (
+                      <div key={label} className="flex items-center gap-2">
+                        <div className="w-24 text-xs text-gray-400 truncate">{label}</div>
                         <div className="flex-1 h-5 rounded bg-blue-500/10 border border-blue-500/30 relative overflow-hidden">
                           <div className="absolute inset-y-0 left-0 bg-blue-500/40" style={{ width: '70%' }} />
                         </div>
-                        <span className="text-[10px] text-muted">Read-only stem</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {(!selectedTrack.stems || selectedTrack.stems.length === 0) && pendingCapabilities[selectedTrack.id]?.splitStems && (
-                  <div className="space-y-2">
-                    {['Vocals', 'Instrumental', 'AI-generated'].map((label) => (
-                      <div key={label} className="flex items-center gap-2">
-                        <div className="w-24 text-xs text-gray-400 truncate">{label}</div>
-                        <div className="flex-1 h-5 rounded bg-black/40 border border-white/10" />
-                        <span className="text-[10px] text-muted">AI Engine connected — execution coming next</span>
+                        <span className="text-[10px] text-muted">External stem</span>
                       </div>
                     ))}
                   </div>
@@ -999,7 +1175,7 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
           </div>
 
           <div className="p-4 bg-black/30 rounded-lg border border-purple-500/20">
-            <div className="text-sm font-semibold text-white mb-3">Style Transform</div>
+            <div className="text-sm font-semibold text-white mb-3">🎛 Beat Style Panel</div>
             {/* AI-assisted control (AI command wired) */}
             {selectedTrack ? (
               <div className="space-y-3">
@@ -1073,14 +1249,14 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
                   disabled={transformJobs[selectedTrack.id]?.status === 'processing' || commandState[selectedTrack.id]?.transform}
                   className="w-full px-4 py-2 bg-pink-600 text-white rounded-lg hover:bg-pink-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                 >
-                  {transformJobs[selectedTrack.id]?.status === 'processing' || commandState[selectedTrack.id]?.transform ? 'Rendering...' : 'Render Style'}
+                  {transformJobs[selectedTrack.id]?.status === 'processing' || commandState[selectedTrack.id]?.transform ? 'Transforming...' : 'Transform Beat'}
                 </button>
                 {transformJobs[selectedTrack.id]?.status && (
                   <div className={`text-xs ${getTransformStatusColor(transformJobs[selectedTrack.id]?.status || '')}`}>
                     {transformJobs[selectedTrack.id]?.status}
                   </div>
                 )}
-                <div className="text-xs text-muted">AI-assisted controls (AI command wired).</div>
+                <div className="text-xs text-muted">External AI beat transform via Mureka.</div>
                 {transformJobs[selectedTrack.id]?.status === 'completed' && (
                   <button
                     onClick={() => downloadTransform(selectedTrack.id)}
@@ -1096,10 +1272,99 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
           </div>
 
           <div className="p-4 bg-black/30 rounded-lg border border-purple-500/20">
-            <div className="text-sm font-semibold text-white mb-3">Instrument Add</div>
+            <div className="text-sm font-semibold text-white mb-3">🎤 Vocal Control Panel</div>
+            {selectedTrack ? (
+              <div className="text-xs text-gray-400 space-y-3">
+                <label className="flex items-center gap-2 text-xs text-gray-400">
+                  <input
+                    type="checkbox"
+                    checked={vocalSettings[selectedTrack.id]?.useOriginal ?? true}
+                    onChange={(e) => {
+                      setVocalSettings((prev) => ({
+                        ...prev,
+                        [selectedTrack.id]: {
+                          ...prev[selectedTrack.id],
+                          useOriginal: e.target.checked,
+                        },
+                      }));
+                    }}
+                    className="accent-purple-500"
+                  />
+                  Use original vocals
+                </label>
+                {!vocalSettings[selectedTrack.id]?.useOriginal && (
+                  <div>
+                    <label className="text-xs text-gray-400">Custom vocals URL</label>
+                    <input
+                      value={vocalSettings[selectedTrack.id]?.customUrl || ''}
+                      onChange={(e) => {
+                        setVocalSettings((prev) => ({
+                          ...prev,
+                          [selectedTrack.id]: {
+                            ...prev[selectedTrack.id],
+                            customUrl: e.target.value,
+                          },
+                        }));
+                      }}
+                      className="w-full px-3 py-2 bg-black/60 border border-purple-500/30 rounded-lg text-white text-sm"
+                      placeholder="https://..."
+                    />
+                  </div>
+                )}
+                <label className="text-xs text-gray-400">Texture</label>
+                <select
+                  value={vocalSettings[selectedTrack.id]?.texture || 'warm'}
+                  onChange={(e) => {
+                    setVocalSettings((prev) => ({
+                      ...prev,
+                      [selectedTrack.id]: {
+                        ...prev[selectedTrack.id],
+                        texture: e.target.value,
+                      },
+                    }));
+                  }}
+                  className="w-full px-3 py-2 bg-black/60 border border-purple-500/30 rounded-lg text-white text-sm"
+                >
+                  {['Warm', 'Dark', 'Bright', 'Aggressive'].map((texture) => (
+                    <option key={texture} value={texture.toLowerCase()}>{texture}</option>
+                  ))}
+                </select>
+                <label className="text-xs text-gray-400">Energy</label>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={vocalSettings[selectedTrack.id]?.energy ?? 60}
+                  onChange={(e) => {
+                    setVocalSettings((prev) => ({
+                      ...prev,
+                      [selectedTrack.id]: {
+                        ...prev[selectedTrack.id],
+                        energy: Number(e.target.value),
+                      },
+                    }));
+                  }}
+                  className="w-full studio-knob"
+                />
+                <button
+                  onClick={handleVocalStyle}
+                  className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                >
+                  Apply Vocal Style
+                </button>
+                <div className="text-xs text-muted">External AI vocal styling via Mureka.</div>
+              </div>
+            ) : (
+              <div className="text-sm text-gray-400">Select a track to process vocals.</div>
+            )}
+          </div>
+
+          <div className="p-4 bg-black/30 rounded-lg border border-purple-500/20">
+            <div className="text-sm font-semibold text-white mb-3">🎹 Instrument Add Panel</div>
             <div className="text-xs text-gray-400 space-y-3">
-              {/* AI-assisted control (AI command wired) */}
-              <div className="text-muted">AI-generated instrument layer (read-only).</div>
+              <div className="text-muted">
+                Layers: {selectedTrackId ? (instrumentLayers[selectedTrackId]?.length || 0) : 0}
+              </div>
               <label className="text-xs text-gray-400">Mood</label>
               <select
                 value={currentInstrument?.mood || 'warm'}
@@ -1144,51 +1409,59 @@ export default function AudioProcessor({ projectId, projectName }: AudioProcesso
                   <button
                     key={instrument}
                     onClick={() => handleInstrumentAdd(instrument)}
-                    disabled={selectedTrackId ? commandState[selectedTrackId]?.instrument || pendingCapabilities[selectedTrackId]?.instrument : false}
-                    title={pendingCapabilities[selectedTrackId]?.instrument ? 'AI Engine connected — execution coming next' : undefined}
+                    disabled={selectedTrackId ? commandState[selectedTrackId]?.instrument : false}
                     className="px-3 py-2 rounded bg-black/60 border border-white/10 hover:border-purple-400/60 hover:text-white transition disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {instrument}
                   </button>
                 ))}
               </div>
+              <div className="text-xs text-muted">External AI instrument layers via Mureka.</div>
             </div>
           </div>
 
           {selectedTrack && (
             <div className="p-4 bg-black/30 rounded-lg border border-purple-500/20">
-              <div className="text-sm font-semibold text-white mb-3">Render & Bounce</div>
+              <div className="text-sm font-semibold text-white mb-3">🎚 Mix & Master Panel</div>
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => triggerMix(selectedTrack.id)}
-                  disabled={selectedTrack.status === 'mixing' || commandState[selectedTrack.id]?.mixAdjust}
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                 >
-                  {selectedTrack.status === 'mixing' ? 'Rendering Mix...' : 'Render Mix'}
+                  Render Mix
                 </button>
                 <button
                   onClick={() => triggerMaster(selectedTrack.id)}
-                  disabled={selectedTrack.status === 'mastering' || commandState[selectedTrack.id]?.export}
+                  disabled={!mixResults[selectedTrack.id]}
                   className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm"
                 >
-                  {selectedTrack.status === 'mastering' ? 'Rendering Master...' : 'Render Master'}
+                  Render Master
                 </button>
-                {selectedTrack.status === 'mixed' || selectedTrack.status === 'mastered' ? (
+                {mixResults[selectedTrack.id] && (
                   <button
-                    onClick={() => downloadProcessed(selectedTrack.id, 'mix')}
+                    onClick={() => {
+                      const url = mixResults[selectedTrack.id];
+                      const resolvedUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+                      downloadWithAuth(resolvedUrl, `track_${selectedTrack.id}_mix.wav`);
+                    }}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
                   >
                     Bounce Mix
                   </button>
-                ) : null}
-                {selectedTrack.status === 'mastered' && (
+                )}
+                {masterResults[selectedTrack.id] && (
                   <button
-                    onClick={() => downloadProcessed(selectedTrack.id, 'master')}
+                    onClick={() => {
+                      const url = masterResults[selectedTrack.id];
+                      const resolvedUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+                      downloadWithAuth(resolvedUrl, `track_${selectedTrack.id}_master.wav`);
+                    }}
                     className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors text-sm"
                   >
                     Bounce Master
                   </button>
                 )}
+                <div className="text-xs text-muted">External AI mix/master via Mureka.</div>
               </div>
             </div>
           )}

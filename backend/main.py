@@ -8,6 +8,7 @@ from backend.api.v1.projects import router as projects_router
 from backend.api.v1.audio_tracks import router as audio_tracks_router
 from backend.api.v1.audio_transform import router as audio_transform_router
 from backend.ai.ai_commands import router as ai_commands_router
+from backend.api.v1.ai_proxy import router as ai_proxy_router
 from backend.api.v1.billing import router as billing_router
 from backend.api.auth import router as auth_router
 
@@ -49,32 +50,13 @@ async def internal_exception_handler(request: Request, exc: Exception):
     logger.exception("Unhandled exception: %s", exc)
     return JSONResponse(status_code=500, content={"detail": "An internal server error occurred. Please try again later."})
 
-# CORS - always enabled with configurable origins (safe defaults)
-import os
+# CORS
 from fastapi.middleware.cors import CORSMiddleware
-
-# Read allowed origins from settings (Pydantic-validated)
-allowed_origins = settings.allowed_origins
-allowed_origin_regex = os.getenv("ALLOWED_ORIGIN_REGEX", "").strip() or None
-
-# Always allow official Vercel frontends
-vercel_origins = [
-    "https://zeusonic-t.vercel.app",
-    "https://zeusonic.vercel.app",
-]
-for origin in vercel_origins:
-    if origin not in allowed_origins:
-        allowed_origins.append(origin)
-
-# Development convenience: keep localhost defaults if no env origins provided
-if settings.app_env == "development" and not allowed_origins and not allowed_origin_regex:
-    allowed_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
-    allow_origin_regex=allowed_origin_regex,
-    allow_credentials=False,
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -146,6 +128,7 @@ app.include_router(projects_router, prefix="/api/v1")
 app.include_router(audio_tracks_router, prefix="/api/v1")
 app.include_router(audio_transform_router, prefix="/api/v1")
 app.include_router(ai_commands_router, prefix="/api/v1")
+app.include_router(ai_proxy_router)
 app.include_router(billing_router, prefix="/api/v1")
 app.include_router(auth_router)
 
