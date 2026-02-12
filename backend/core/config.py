@@ -1,5 +1,7 @@
 from typing import List, Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
+import json
 
 
 class Settings(BaseSettings):
@@ -47,5 +49,22 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
+    @field_validator("allowed_origins", mode="before")
+    @classmethod
+    def parse_allowed_origins(cls, v):
+        if isinstance(v, list):
+            return v
+
+        if isinstance(v, str):
+            # Try JSON first
+            try:
+                return json.loads(v)
+            except Exception:
+                # Fallback: comma-separated string
+                return [origin.strip() for origin in v.split(",")]
+
+        return v
+
 
 settings = Settings()
+
