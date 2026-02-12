@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from backend.core.config import settings
+from backend.core.config import settings, ENVIRONMENT
 from backend.db.database import engine
 from sqlalchemy import text
 from pathlib import Path
@@ -34,5 +34,5 @@ async def health_check():
         "status": "ok",
         "db": "ok" if db_ok else "error",
         "storage": "ok" if storage_ok else "error",
-        "env": settings.app_env,
+        "env": ENVIRONMENT,
     }

@@ -1,5 +1,7 @@
 from fastapi import FastAPI
 from pathlib import Path
+import os
+import logging
 
 from backend.api.v1.health import router as health_router
 from backend.api.v1.meta import router as meta_router
@@ -14,7 +16,7 @@ from backend.api.auth import router as auth_router
 
 from backend.core.auth import create_api_key, list_api_keys
 from backend.db.database import create_tables
-from backend.core.config import settings
+from backend.core.config import settings, DEBUG
 
 app = FastAPI(
     title="Zeusonic API",
@@ -29,6 +31,7 @@ from fastapi import HTTPException as FastAPIHTTPException
 from backend.core.logging import get_logger
 
 logger = get_logger(__name__)
+logging.info(f"Runtime ENVIRONMENT = {os.getenv('ENVIRONMENT')}")
 
 
 @app.exception_handler(FastAPIHTTPException)
@@ -88,7 +91,7 @@ async def startup_event():
     else:
         demo = create_api_key()
     # Development-only: log API key and write it to disk for convenience when running locally
-    if settings.app_env == "development":
+    if DEBUG:
         from backend.core.logging import get_logger
 
         startup_logger = get_logger(__name__)
@@ -130,7 +133,7 @@ app.include_router(audio_transform_router, prefix="/api/v1")
 app.include_router(ai_commands_router, prefix="/api/v1")
 app.include_router(ai_proxy_router)
 app.include_router(billing_router, prefix="/api/v1")
-app.include_router(auth_router)
+app.include_router(auth_router, prefix="/api/v1")
 
 
 @app.get("/", include_in_schema=False)
