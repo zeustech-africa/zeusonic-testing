@@ -56,15 +56,15 @@ class Settings(BaseSettings):
             return v
 
         if isinstance(v, str):
-            # Try JSON first
             try:
                 return json.loads(v)
             except Exception:
-                # Fallback: comma-separated string
                 return [origin.strip() for origin in v.split(",")]
 
         return v
 
 
 settings = Settings()
+
+ENVIRONMENT = settings.app_env
 
