@@ -1,7 +1,12 @@
-from typing import List, Literal, Optional
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import field_validator
+import os
 import json
+from typing import List, Optional, Literal
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+DEBUG = os.getenv("DEBUG", "false").lower() == "true"
 
 
 class Settings(BaseSettings):
@@ -16,12 +21,10 @@ class Settings(BaseSettings):
     database_path: str = "zeusonic.db"
     storage_path: str = "storage"
 
-    allowed_origins: List[str] = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000"
-    ]
+    allowed_origins: List[str] = []
+    allowed_origin_regex: Optional[str] = None
 
-    app_env: str = "development"
+    app_env: str = ENVIRONMENT
 
     # Runtime aliases used across the codebase
     jwt_secret: str = "dev-secret-key"
@@ -44,27 +47,22 @@ class Settings(BaseSettings):
     stripe_webhook_secret: Optional[str] = None
     frontend_base_url: str = "http://localhost:3000"
 
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        extra="ignore"
-    )
-
     @field_validator("allowed_origins", mode="before")
     @classmethod
     def parse_allowed_origins(cls, v):
         if isinstance(v, list):
             return v
-
         if isinstance(v, str):
             try:
                 return json.loads(v)
             except Exception:
-                return [origin.strip() for origin in v.split(",")]
+                return [origin.strip() for origin in v.split(",") if origin.strip()]
+        return []
 
-        return v
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"
+    )
 
 
 settings = Settings()
-
-ENVIRONMENT = settings.app_env
-
