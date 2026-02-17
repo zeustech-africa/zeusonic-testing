@@ -12,12 +12,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
  && rm -rf /var/lib/apt/lists/*
 
-# COPY backend/requirements.txt ./requirements.txt
+# Copy requirements first (for caching)
+COPY backend/requirements.txt ./requirements.txt
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-
-# Copy application code
-COPY . /app
+# Copy backend source code
+COPY backend/ ./backend
 
 # Ensure storage dirs exist
 RUN mkdir -p /app/backend/storage /app/backend/storage/audio_uploads
@@ -28,6 +29,6 @@ EXPOSE 8000
 # Use environment variables recommended for containers
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONPATH=/app
 
-# Run migrations and then start the app (use platform PORT if provided)
-CMD ["sh", "-c", "alembic upgrade head && uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
